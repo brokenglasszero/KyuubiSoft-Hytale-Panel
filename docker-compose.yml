@@ -2,11 +2,16 @@
 # Hytale Dedicated Server - Docker Compose
 # ============================================================
 #
-# SETUP FÜR PORTAINER:
-# 1. Dieses Repo als Stack hinzufügen (Repository URL)
-# 2. EINE der Download-Optionen unten konfigurieren
-# 3. Deploy klicken
-# 4. Nach dem Start: /auth login device ausführen
+# PORTAINER SETUP:
+# 1. Repository URL eingeben
+# 2. Environment Variables setzen (siehe .env.example)
+# 3. Deploy
+# 4. Nach Start: /auth login device
+#
+# LOKAL:
+# 1. cp .env.example .env
+# 2. .env anpassen
+# 3. docker-compose up -d
 #
 # ============================================================
 
@@ -19,101 +24,53 @@ services:
     restart: unless-stopped
     
     environment:
-      # ====================
-      # Java / RAM Settings
-      # ====================
-      - JAVA_MIN_RAM=3G
-      - JAVA_MAX_RAM=4G
+      # Java / RAM
+      - JAVA_MIN_RAM=${JAVA_MIN_RAM:-3G}
+      - JAVA_MAX_RAM=${JAVA_MAX_RAM:-4G}
       
-      # ====================
-      # Server Settings  
-      # ====================
-      - SERVER_PORT=5520
-      - SERVER_BIND=0.0.0.0
-      - TZ=Europe/Berlin
+      # Server
+      - SERVER_PORT=${SERVER_PORT:-5520}
+      - SERVER_BIND=${SERVER_BIND:-0.0.0.0}
+      - TZ=${TZ:-Europe/Berlin}
       
-      # ====================
-      # Backup Settings
-      # ====================
-      - ENABLE_BACKUP=true
-      - BACKUP_FREQUENCY=30
-      
-      # ====================
-      # Auth Mode
-      # ====================
-      # authenticated = Online-Modus (Standard)
-      # offline = LAN-only ohne Auth
-      # - AUTH_MODE=offline
-      
-      # ============================================================
-      # SERVER FILES DOWNLOAD - WÄHLE EINE OPTION:
-      # ============================================================
-      #
-      # OPTION A: Eigene URLs (empfohlen)
-      # ---------------------------------
-      # Lade die Dateien auf deinen eigenen Server/NAS hoch
-      # und gib hier die URLs an:
-      #
-      # - SERVER_JAR_URL=https://dein-nas.local/hytale/HytaleServer.jar
-      # - ASSETS_URL=https://dein-nas.local/hytale/Assets.zip
-      #
-      # OPTION B: Offizieller Hytale Downloader
-      # ---------------------------------------
-      # Nutzt den offiziellen Downloader (erfordert OAuth2 Login)
-      # Nach dem ersten Start musst du dich einmalig authentifizieren
-      #
-      # - USE_HYTALE_DOWNLOADER=true
-      # - HYTALE_PATCHLINE=release
-      #
-      # OPTION C: Manuell (nach Container-Start)
-      # ----------------------------------------
-      # Dateien nach dem Start manuell kopieren:
-      # docker cp HytaleServer.jar hytale:/opt/hytale/server/
-      # docker cp Assets.zip hytale:/opt/hytale/server/
-      #
-      # ============================================================
-      
-      # Aktiviere EINE der Optionen oben durch Entfernen des #
-      
-    # ====================
-    # Ports - UDP!
-    # ====================
-    ports:
-      - "5520:5520/udp"
-    
-    # ====================
-    # Persistent Volumes
-    # ====================
-    volumes:
-      # Server-Dateien (persistent für Downloads)
-      - hytale-server:/opt/hytale/server
-      # Welten und Konfiguration
-      - hytale-data:/opt/hytale/data
       # Backups
+      - ENABLE_BACKUP=${ENABLE_BACKUP:-true}
+      - BACKUP_FREQUENCY=${BACKUP_FREQUENCY:-30}
+      
+      # Auth
+      - AUTH_MODE=${AUTH_MODE:-}
+      
+      # Download URLs (Option A)
+      - SERVER_JAR_URL=${SERVER_JAR_URL:-}
+      - ASSETS_URL=${ASSETS_URL:-}
+      
+      # Hytale Downloader (Option B)
+      - USE_HYTALE_DOWNLOADER=${USE_HYTALE_DOWNLOADER:-false}
+      - HYTALE_PATCHLINE=${HYTALE_PATCHLINE:-release}
+
+    # Ports - UDP!
+    ports:
+      - "${SERVER_PORT:-5520}:${SERVER_PORT:-5520}/udp"
+    
+    # Volumes
+    volumes:
+      - hytale-server:/opt/hytale/server
+      - hytale-data:/opt/hytale/data
       - hytale-backups:/opt/hytale/backups
-      # Plugins
       - hytale-plugins:/opt/hytale/plugins
-      # Mods
       - hytale-mods:/opt/hytale/mods
 
-    # ====================
-    # Console Access
-    # ====================
+    # Console
     stdin_open: true
     tty: true
     
-    # ====================
     # Logging
-    # ====================
     logging:
       driver: "json-file"
       options:
         max-size: "50m"
         max-file: "5"
 
-# ============================================================
-# Named Volumes (persistent!)
-# ============================================================
 volumes:
   hytale-server:
     name: hytale-server

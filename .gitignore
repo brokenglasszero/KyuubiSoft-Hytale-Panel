@@ -9,6 +9,10 @@ backups/
 logs/
 server/
 
+# Environment (enthält evtl. URLs/Secrets)
+.env
+!.env.example
+
 # IDE
 .idea/
 .vscode/
