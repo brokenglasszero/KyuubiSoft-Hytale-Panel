@@ -21,7 +21,7 @@ services:
     image: hytale-server:latest
     container_name: hytale
     hostname: hytale
-    restart: unless-stopped
+    restart: on-failure:3
     
     environment:
       # Java / RAM

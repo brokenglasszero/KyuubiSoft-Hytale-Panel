@@ -3,8 +3,6 @@
 # Hytale Server - Entrypoint
 # ============================================================
 
-set -e
-
 echo ""
 echo "╔══════════════════════════════════════════════════════════╗"
 echo "║       Hytale Dedicated Server - Docker Container         ║"
@@ -72,26 +70,72 @@ elif [ "$USE_HYTALE_DOWNLOADER" = "true" ]; then
     fi
     
     cd "$DOWNLOADER_DIR"
-    
-    # Check if we have credentials
-    if [ ! -f "$CREDENTIALS_FILE" ]; then
-        echo ""
-        echo "╔══════════════════════════════════════════════════════════╗"
-        echo "║  AUTHENTICATION REQUIRED                                 ║"
-        echo "╠══════════════════════════════════════════════════════════╣"
-        echo "║  Running Hytale Downloader for first-time setup...       ║"
-        echo "║  A URL and code will appear below.                       ║"
-        echo "║  Open the URL in your browser and enter the code.        ║"
-        echo "╚══════════════════════════════════════════════════════════╝"
-        echo ""
-    fi
-    
-    # Run downloader
     PATCHLINE="${HYTALE_PATCHLINE:-release}"
     DOWNLOAD_PATH="/opt/hytale/server/game.zip"
     
-    echo "[INFO] Downloading game files (patchline: ${PATCHLINE})..."
-    gosu hytale ./hytale-downloader-linux-amd64 -patchline "$PATCHLINE" -download-path "$DOWNLOAD_PATH" -skip-update-check
+    # Loop until download succeeds
+    MAX_ATTEMPTS=60
+    ATTEMPT=0
+    
+    while [ ! -f "$DOWNLOAD_PATH" ]; do
+        ATTEMPT=$((ATTEMPT + 1))
+        
+        # Check if credentials exist
+        if [ ! -f "$CREDENTIALS_FILE" ]; then
+            echo ""
+            echo "╔══════════════════════════════════════════════════════════╗"
+            echo "║  AUTHENTICATION REQUIRED                                 ║"
+            echo "╠══════════════════════════════════════════════════════════╣"
+            echo "║  1. A URL and code will appear below                     ║"
+            echo "║  2. Open the URL in your browser                         ║"
+            echo "║  3. Enter the code and login with your Hytale account    ║"
+            echo "║  4. Wait - download will start automatically             ║"
+            echo "╚══════════════════════════════════════════════════════════╝"
+            echo ""
+        fi
+        
+        echo "[INFO] Attempting download (attempt ${ATTEMPT})..."
+        
+        # Run downloader - it will show auth prompt if needed
+        if gosu hytale ./hytale-downloader-linux-amd64 -patchline "$PATCHLINE" -download-path "$DOWNLOAD_PATH" -skip-update-check 2>&1; then
+            echo "[INFO] Download successful!"
+            break
+        else
+            RESULT=$?
+            echo "[WARN] Download failed (exit code: $RESULT)"
+            
+            # If 403 error, credentials might be invalid - delete them
+            if [ -f "$CREDENTIALS_FILE" ]; then
+                echo "[WARN] Deleting old credentials and retrying..."
+                rm -f "$CREDENTIALS_FILE"
+            fi
+            
+            if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
+                echo "[ERROR] Max attempts reached. Please check:"
+                echo "  - Is your Hytale account valid?"
+                echo "  - Do you own the game?"
+                echo "  - Are Hytale servers online?"
+                echo ""
+                echo "[INFO] Container will keep running. You can:"
+                echo "  1. Check logs and try again: docker restart hytale"
+                echo "  2. Manually copy files: docker cp HytaleServer.jar hytale:/opt/hytale/server/"
+                echo ""
+                echo "[WAIT] Waiting for manual intervention..."
+                
+                # Wait forever instead of crashing
+                while true; do
+                    if [ -f "$SERVER_JAR" ] && [ -f "$ASSETS_FILE" ]; then
+                        echo "[INFO] Files detected! Continuing..."
+                        break 2
+                    fi
+                    sleep 10
+                done
+            fi
+            
+            echo "[INFO] Waiting 10 seconds before retry..."
+            sleep 10
+        fi
+    done
     
     # Extract the downloaded zip
     if [ -f "$DOWNLOAD_PATH" ]; then
@@ -107,9 +151,6 @@ elif [ "$USE_HYTALE_DOWNLOADER" = "true" ]; then
         
         rm -f game.zip
         echo "[INFO] Extraction complete!"
-    else
-        echo "[ERROR] Download failed - game.zip not found"
-        exit 1
     fi
 
 # No method configured - wait for manual copy
@@ -150,6 +191,8 @@ if [ ! -f "$SERVER_JAR" ] || [ ! -f "$ASSETS_FILE" ]; then
     echo "[ERROR] Server files still missing!"
     echo "[ERROR] Expected: $SERVER_JAR"
     echo "[ERROR] Expected: $ASSETS_FILE"
+    echo ""
+    echo "Contents of /opt/hytale/server/:"
     ls -la /opt/hytale/server/ || true
     exit 1
 fi
