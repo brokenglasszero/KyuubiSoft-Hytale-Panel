@@ -120,9 +120,10 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
       # Shared volumes with game server (host: /opt/hytale-beta/, container: /opt/hytale/)
-      - /opt/hytale-beta/server:/opt/hytale/server:ro
+      # Server configs need write access for the config editor
+      - /opt/hytale-beta/server:/opt/hytale/server
       - /opt/hytale-beta/backups:/opt/hytale/backups
-      - /opt/hytale-beta/data:/opt/hytale/data:ro
+      - /opt/hytale-beta/data:/opt/hytale/data
 
       # Manager persistent data
       - manager-data:/app/data
