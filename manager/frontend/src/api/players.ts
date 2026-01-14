@@ -7,8 +7,22 @@ export interface PlayerInfo {
   session_duration: string
 }
 
+export interface PlayerHistoryEntry {
+  name: string
+  uuid?: string
+  firstSeen: string
+  lastSeen: string
+  playTime: number // Total playtime in seconds
+  sessionCount: number
+}
+
 export interface PlayersResponse {
   players: PlayerInfo[]
+  count: number
+}
+
+export interface PlayerHistoryResponse {
+  players: PlayerHistoryEntry[]
   count: number
 }
 
@@ -29,13 +43,23 @@ export const playersApi = {
     return response.data
   },
 
+  async getHistory(): Promise<PlayerHistoryResponse> {
+    const response = await api.get<PlayerHistoryResponse>('/players/history')
+    return response.data
+  },
+
+  async getOffline(): Promise<PlayerHistoryResponse> {
+    const response = await api.get<PlayerHistoryResponse>('/players/offline')
+    return response.data
+  },
+
   async kick(playerName: string): Promise<ActionResponse> {
     const response = await api.post<ActionResponse>(`/players/${playerName}/kick`)
     return response.data
   },
 
-  async ban(playerName: string): Promise<ActionResponse> {
-    const response = await api.post<ActionResponse>(`/players/${playerName}/ban`)
+  async ban(playerName: string, reason?: string): Promise<ActionResponse> {
+    const response = await api.post<ActionResponse>(`/players/${playerName}/ban`, { reason })
     return response.data
   },
 

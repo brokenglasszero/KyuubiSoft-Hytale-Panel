@@ -33,6 +33,7 @@ export const whitelistApi = {
 
 export interface BanEntry {
   player: string
+  target?: string // UUID from Hytale
   reason?: string
   bannedAt: string
   bannedBy?: string
@@ -64,6 +65,7 @@ export interface PermissionGroup {
 }
 
 export interface PermissionUser {
+  uuid: string
   name: string
   groups: string[]
 }

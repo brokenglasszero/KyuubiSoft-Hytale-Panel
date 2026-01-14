@@ -139,33 +139,75 @@ router.delete('/whitelist/:player', authMiddleware, async (req: Request, res: Re
 
 // ============== BANS ==============
 
+// Hytale server bans.json format
+interface HytaleBanEntry {
+  type: 'infinite' | 'temporary';
+  target: string; // UUID
+  by: string; // UUID of admin (00000000-0000-0000-0000-000000000000 for console)
+  timestamp: number; // Unix timestamp in ms
+  reason: string;
+}
+
+// Our display format with player name
 interface BanEntry {
-  player: string;
+  player: string; // Player name for display
+  target?: string; // UUID from Hytale
   reason?: string;
   bannedAt: string;
   bannedBy?: string;
+}
+
+// Separate file to store player name -> UUID mapping for display
+interface BanNameMapping {
+  [uuid: string]: string; // UUID -> player name
 }
 
 async function getBansPath(): Promise<string> {
   return path.join(config.serverPath, 'bans.json');
 }
 
+async function getBansMappingPath(): Promise<string> {
+  return path.join(config.serverPath, 'bans-names.json');
+}
+
+async function readBansMapping(): Promise<BanNameMapping> {
+  try {
+    const content = await readFile(await getBansMappingPath(), 'utf-8');
+    return JSON.parse(content);
+  } catch {
+    return {};
+  }
+}
+
+async function writeBansMapping(mapping: BanNameMapping): Promise<void> {
+  await writeFile(await getBansMappingPath(), JSON.stringify(mapping, null, 2), 'utf-8');
+}
+
 async function readBans(): Promise<BanEntry[]> {
   try {
     const content = await readFile(await getBansPath(), 'utf-8');
     const data = JSON.parse(content);
-    // Handle both array format and object format
+    const mapping = await readBansMapping();
+
     if (Array.isArray(data)) {
-      return data;
+      // Check if it's Hytale format (has 'target' and 'timestamp')
+      if (data.length > 0 && 'target' in data[0] && 'timestamp' in data[0]) {
+        // Convert Hytale format to our display format
+        return (data as HytaleBanEntry[]).map(ban => ({
+          player: mapping[ban.target] || ban.target.substring(0, 8) + '...', // Show UUID prefix if no name
+          target: ban.target,
+          reason: ban.reason !== 'No reason.' ? ban.reason : undefined,
+          bannedAt: new Date(ban.timestamp).toISOString(),
+          bannedBy: ban.by === '00000000-0000-0000-0000-000000000000' ? 'Console' : (mapping[ban.by] || 'Admin'),
+        }));
+      }
+      // Legacy format - return as is
+      return data as BanEntry[];
     }
     return [];
   } catch {
     return [];
   }
-}
-
-async function writeBans(data: BanEntry[]): Promise<void> {
-  await writeFile(await getBansPath(), JSON.stringify(data, null, 2), 'utf-8');
 }
 
 // GET /api/management/bans
@@ -178,94 +220,233 @@ router.get('/bans', authMiddleware, async (_req: Request, res: Response) => {
   }
 });
 
-// POST /api/management/bans/add
-router.post('/bans/add', authMiddleware, async (req: Request, res: Response) => {
+// POST /api/management/bans/add - Stores name mapping, server command handles actual ban
+router.post('/bans/add', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { player, reason } = req.body;
     if (!player || typeof player !== 'string') {
       res.status(400).json({ error: 'player name required' });
       return;
     }
-    const bans = await readBans();
-    const existing = bans.find(b => b.player === player);
-    if (!existing) {
-      bans.push({
-        player,
-        reason: reason || undefined,
-        bannedAt: new Date().toISOString(),
-        bannedBy: 'Admin',
-      });
-      await writeBans(bans);
+
+    // Import docker service to execute ban command
+    const { execCommand } = await import('../services/docker.js');
+
+    // First kick the player
+    await execCommand(`/kick ${player} ${reason || 'You have been banned'}`);
+
+    // Execute ban command - server will update bans.json
+    const banCommand = reason ? `/ban ${player} ${reason}` : `/ban ${player}`;
+    const result = await execCommand(banCommand);
+
+    if (!result.success) {
+      res.status(500).json({ error: result.error || 'Failed to ban player' });
+      return;
     }
+
+    // Log activity
+    await logActivity(
+      req.user || 'Admin',
+      'ban',
+      'player',
+      true,
+      player,
+      reason || undefined
+    );
+
+    // Wait a moment for server to update bans.json, then read it
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const bans = await readBans();
+
+    // Try to store the player name mapping for future display
+    // We need to find the new ban entry by checking which UUID doesn't have a name
+    const mapping = await readBansMapping();
+    let updated = false;
+    for (const ban of bans) {
+      if (ban.target && !mapping[ban.target]) {
+        // This might be the new ban - store the name
+        mapping[ban.target] = player;
+        updated = true;
+      }
+    }
+    if (updated) {
+      await writeBansMapping(mapping);
+      // Re-read bans with updated mapping
+      const updatedBans = await readBans();
+      res.json({ success: true, bans: updatedBans });
+      return;
+    }
+
     res.json({ success: true, bans });
   } catch (error) {
     res.status(500).json({ error: 'Failed to add ban' });
   }
 });
 
-// DELETE /api/management/bans/:player
-router.delete('/bans/:player', authMiddleware, async (req: Request, res: Response) => {
+// DELETE /api/management/bans/:player - Execute unban command (works online and offline)
+router.delete('/bans/:player', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { player } = req.params;
-    let bans = await readBans();
-    bans = bans.filter(b => b.player !== player);
-    await writeBans(bans);
+
+    // Import docker service to check status and execute commands
+    const { execCommand, getStatus } = await import('../services/docker.js');
+
+    // Check if server is running
+    const status = await getStatus();
+    const serverRunning = status.running;
+
+    if (serverRunning) {
+      // Server is online - use command
+      const result = await execCommand(`/unban ${player}`);
+
+      if (!result.success) {
+        // Command failed, try direct file manipulation as fallback
+        console.log('Unban command failed, trying direct file manipulation');
+      } else {
+        // Log activity
+        await logActivity(req.user || 'Admin', 'unban', 'player', true, player);
+
+        // Wait a moment for server to update bans.json
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const bans = await readBans();
+        res.json({ success: true, bans });
+        return;
+      }
+    }
+
+    // Server is offline or command failed - directly modify bans.json
+    const bansPath = await getBansPath();
+    const content = await readFile(bansPath, 'utf-8');
+    const bansData = JSON.parse(content);
+
+    if (Array.isArray(bansData)) {
+      // Find the player's UUID from our mapping
+      const mapping = await readBansMapping();
+      let targetIdentifier = player;
+
+      // Check if this is a name, find the UUID
+      const uuidEntry = Object.entries(mapping).find(([, name]) => name === player);
+      if (uuidEntry) {
+        targetIdentifier = uuidEntry[0];
+      }
+
+      // Filter out the ban (check both target UUID and name mapping)
+      const filteredBans = bansData.filter((ban: HytaleBanEntry) => {
+        const banName = mapping[ban.target];
+        return ban.target !== targetIdentifier && banName !== player;
+      });
+
+      // Write back the filtered bans
+      await writeFile(bansPath, JSON.stringify(filteredBans, null, 2), 'utf-8');
+    }
+
+    // Log activity
+    await logActivity(req.user || 'Admin', 'unban', 'player', true, player, 'Direct file modification');
+
+    const bans = await readBans();
     res.json({ success: true, bans });
   } catch (error) {
+    console.error('Unban error:', error);
     res.status(500).json({ error: 'Failed to remove ban' });
   }
 });
 
 // ============== PERMISSIONS ==============
 
-interface Permission {
-  name: string;
-  description?: string;
+// Hytale permissions.json format:
+// {
+//   "users": { "UUID": { "groups": ["Group1", "Group2"] } },
+//   "groups": { "GroupName": ["permission1", "permission2"] }
+// }
+
+interface HytalePermissionsData {
+  users: { [uuid: string]: { groups: string[] } };
+  groups: { [name: string]: string[] };
+}
+
+// Our display format with player names
+interface PermissionUser {
+  uuid: string;
+  name: string; // Display name
+  groups: string[];
 }
 
 interface PermissionGroup {
   name: string;
   permissions: string[];
-  inherits?: string[];
 }
 
-interface PermissionUser {
-  name: string;
-  groups: string[];
-}
-
-interface PermissionsData {
+interface PermissionsDisplayData {
   users: PermissionUser[];
   groups: PermissionGroup[];
-  availablePermissions?: Permission[];
+}
+
+// Name mapping file for permissions (UUID -> player name)
+interface PermissionsNameMapping {
+  [uuid: string]: string;
 }
 
 async function getPermissionsPath(): Promise<string> {
   return path.join(config.serverPath, 'permissions.json');
 }
 
-async function readPermissions(): Promise<PermissionsData> {
+async function getPermissionsNameMappingPath(): Promise<string> {
+  return path.join(config.serverPath, 'permissions-names.json');
+}
+
+async function readPermissionsNameMapping(): Promise<PermissionsNameMapping> {
+  try {
+    const content = await readFile(await getPermissionsNameMappingPath(), 'utf-8');
+    return JSON.parse(content);
+  } catch {
+    return {};
+  }
+}
+
+async function writePermissionsNameMapping(mapping: PermissionsNameMapping): Promise<void> {
+  await writeFile(await getPermissionsNameMappingPath(), JSON.stringify(mapping, null, 2), 'utf-8');
+}
+
+async function readHytalePermissions(): Promise<HytalePermissionsData> {
   try {
     const content = await readFile(await getPermissionsPath(), 'utf-8');
     const data = JSON.parse(content);
     return {
-      users: data.users || [],
-      groups: data.groups || [],
-      availablePermissions: data.availablePermissions || [],
+      users: data.users || {},
+      groups: data.groups || {},
     };
   } catch {
-    return { users: [], groups: [], availablePermissions: [] };
+    return { users: {}, groups: {} };
   }
 }
 
-async function writePermissions(data: PermissionsData): Promise<void> {
+async function writeHytalePermissions(data: HytalePermissionsData): Promise<void> {
   await writeFile(await getPermissionsPath(), JSON.stringify(data, null, 2), 'utf-8');
+}
+
+// Convert Hytale format to display format
+async function readPermissionsDisplay(): Promise<PermissionsDisplayData> {
+  const hytale = await readHytalePermissions();
+  const mapping = await readPermissionsNameMapping();
+
+  const users: PermissionUser[] = Object.entries(hytale.users).map(([uuid, userData]) => ({
+    uuid,
+    name: mapping[uuid] || uuid.substring(0, 8) + '...',
+    groups: userData.groups || [],
+  }));
+
+  const groups: PermissionGroup[] = Object.entries(hytale.groups).map(([name, permissions]) => ({
+    name,
+    permissions: permissions || [],
+  }));
+
+  return { users, groups };
 }
 
 // GET /api/management/permissions
 router.get('/permissions', authMiddleware, async (_req: Request, res: Response) => {
   try {
-    const data = await readPermissions();
+    const data = await readPermissionsDisplay();
     res.json(data);
   } catch (error) {
     res.status(500).json({ error: 'Failed to read permissions' });
@@ -275,33 +456,68 @@ router.get('/permissions', authMiddleware, async (_req: Request, res: Response) 
 // POST /api/management/permissions/users
 router.post('/permissions/users', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const { name, groups } = req.body;
+    const { name, uuid, groups } = req.body;
     if (!name || typeof name !== 'string') {
       res.status(400).json({ error: 'name required' });
       return;
     }
-    const data = await readPermissions();
-    const existingIndex = data.users.findIndex(u => u.name === name);
-    if (existingIndex >= 0) {
-      data.users[existingIndex].groups = groups || [];
-    } else {
-      data.users.push({ name, groups: groups || [] });
+
+    const hytale = await readHytalePermissions();
+    const mapping = await readPermissionsNameMapping();
+
+    // If UUID provided, use it; otherwise we need to get it from the server
+    let targetUuid = uuid;
+
+    if (!targetUuid) {
+      // Try to find existing UUID for this player name in mapping
+      const existingEntry = Object.entries(mapping).find(([, n]) => n === name);
+      if (existingEntry) {
+        targetUuid = existingEntry[0];
+      } else {
+        // Generate a placeholder - the server will use the correct UUID when the player joins
+        // For now, store the name as a temporary key
+        targetUuid = `name:${name}`;
+      }
     }
-    await writePermissions(data);
-    res.json({ success: true, users: data.users });
+
+    // Update Hytale permissions
+    hytale.users[targetUuid] = { groups: groups || [] };
+    await writeHytalePermissions(hytale);
+
+    // Update name mapping
+    mapping[targetUuid] = name;
+    await writePermissionsNameMapping(mapping);
+
+    const displayData = await readPermissionsDisplay();
+    res.json({ success: true, users: displayData.users });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update user permissions' });
   }
 });
 
-// DELETE /api/management/permissions/users/:name
-router.delete('/permissions/users/:name', authMiddleware, async (req: Request, res: Response) => {
+// DELETE /api/management/permissions/users/:identifier (can be UUID or name)
+router.delete('/permissions/users/:identifier', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const { name } = req.params;
-    const data = await readPermissions();
-    data.users = data.users.filter(u => u.name !== name);
-    await writePermissions(data);
-    res.json({ success: true, users: data.users });
+    const { identifier } = req.params;
+    const hytale = await readHytalePermissions();
+    const mapping = await readPermissionsNameMapping();
+
+    // Try to find the UUID - identifier could be UUID or name
+    let targetUuid = identifier;
+    if (!hytale.users[identifier]) {
+      // Not a UUID, try to find by name
+      const entry = Object.entries(mapping).find(([, name]) => name === identifier);
+      if (entry) {
+        targetUuid = entry[0];
+      }
+    }
+
+    // Remove from Hytale permissions
+    delete hytale.users[targetUuid];
+    await writeHytalePermissions(hytale);
+
+    const displayData = await readPermissionsDisplay();
+    res.json({ success: true, users: displayData.users });
   } catch (error) {
     res.status(500).json({ error: 'Failed to remove user' });
   }
@@ -310,21 +526,20 @@ router.delete('/permissions/users/:name', authMiddleware, async (req: Request, r
 // POST /api/management/permissions/groups
 router.post('/permissions/groups', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const { name, permissions, inherits } = req.body;
+    const { name, permissions } = req.body;
     if (!name || typeof name !== 'string') {
       res.status(400).json({ error: 'name required' });
       return;
     }
-    const data = await readPermissions();
-    const existingIndex = data.groups.findIndex(g => g.name === name);
-    if (existingIndex >= 0) {
-      data.groups[existingIndex].permissions = permissions || [];
-      data.groups[existingIndex].inherits = inherits;
-    } else {
-      data.groups.push({ name, permissions: permissions || [], inherits });
-    }
-    await writePermissions(data);
-    res.json({ success: true, groups: data.groups });
+
+    const hytale = await readHytalePermissions();
+
+    // Update group permissions (Hytale format: groups are objects with permission arrays)
+    hytale.groups[name] = permissions || [];
+    await writeHytalePermissions(hytale);
+
+    const displayData = await readPermissionsDisplay();
+    res.json({ success: true, groups: displayData.groups });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update group' });
   }
@@ -334,10 +549,14 @@ router.post('/permissions/groups', authMiddleware, async (req: Request, res: Res
 router.delete('/permissions/groups/:name', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { name } = req.params;
-    const data = await readPermissions();
-    data.groups = data.groups.filter(g => g.name !== name);
-    await writePermissions(data);
-    res.json({ success: true, groups: data.groups });
+    const hytale = await readHytalePermissions();
+
+    // Remove group from Hytale permissions
+    delete hytale.groups[name];
+    await writeHytalePermissions(hytale);
+
+    const displayData = await readPermissionsDisplay();
+    res.json({ success: true, groups: displayData.groups });
   } catch (error) {
     res.status(500).json({ error: 'Failed to remove group' });
   }
