@@ -64,6 +64,18 @@ router.get('/count', authMiddleware, async (_req: Request, res: Response) => {
   res.json({ count });
 });
 
+// GET /api/players/history - All players who have ever joined
+router.get('/history', authMiddleware, async (_req: Request, res: Response) => {
+  const history = await playersService.getPlayerHistory();
+  res.json({ players: history, count: history.length });
+});
+
+// GET /api/players/offline - Players in history who are currently offline
+router.get('/offline', authMiddleware, async (_req: Request, res: Response) => {
+  const offline = await playersService.getOfflinePlayers();
+  res.json({ players: offline, count: offline.length });
+});
+
 // POST /api/players/:name/kick
 router.post('/:name/kick', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const playerName = req.params.name;

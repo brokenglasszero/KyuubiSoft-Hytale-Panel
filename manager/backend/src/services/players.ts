@@ -1,8 +1,103 @@
 import { getLogs } from './docker.js';
+import { readFile, writeFile } from 'fs/promises';
+import path from 'path';
+import { config } from '../config.js';
 import type { PlayerInfo } from '../types/index.js';
 
 // Player tracking state
 const onlinePlayers: Map<string, Date> = new Map();
+
+// Player history tracking
+export interface PlayerHistoryEntry {
+  name: string;
+  uuid?: string;
+  firstSeen: string;
+  lastSeen: string;
+  playTime: number; // Total playtime in seconds
+  sessionCount: number;
+}
+
+let playerHistory: Map<string, PlayerHistoryEntry> = new Map();
+let historyLoaded = false;
+
+async function getHistoryPath(): Promise<string> {
+  return path.join(config.serverPath, 'player-history.json');
+}
+
+async function loadPlayerHistory(): Promise<void> {
+  if (historyLoaded) return;
+  try {
+    const content = await readFile(await getHistoryPath(), 'utf-8');
+    const data = JSON.parse(content);
+    if (Array.isArray(data)) {
+      for (const entry of data) {
+        playerHistory.set(entry.name, entry);
+      }
+    }
+  } catch {
+    // File doesn't exist yet, start with empty history
+  }
+  historyLoaded = true;
+}
+
+async function savePlayerHistory(): Promise<void> {
+  const data = Array.from(playerHistory.values());
+  await writeFile(await getHistoryPath(), JSON.stringify(data, null, 2), 'utf-8');
+}
+
+function recordPlayerJoin(name: string, uuid?: string): void {
+  const now = new Date().toISOString();
+  const existing = playerHistory.get(name);
+
+  if (existing) {
+    existing.lastSeen = now;
+    existing.sessionCount++;
+    if (uuid && !existing.uuid) {
+      existing.uuid = uuid;
+    }
+  } else {
+    playerHistory.set(name, {
+      name,
+      uuid,
+      firstSeen: now,
+      lastSeen: now,
+      playTime: 0,
+      sessionCount: 1,
+    });
+  }
+
+  // Save async (don't await to not block)
+  savePlayerHistory().catch(err => console.error('Failed to save player history:', err));
+}
+
+function recordPlayerLeave(name: string): void {
+  const existing = playerHistory.get(name);
+  const joinTime = onlinePlayers.get(name);
+
+  if (existing && joinTime) {
+    const sessionDuration = Math.floor((Date.now() - joinTime.getTime()) / 1000);
+    existing.playTime += sessionDuration;
+    existing.lastSeen = new Date().toISOString();
+
+    // Save async
+    savePlayerHistory().catch(err => console.error('Failed to save player history:', err));
+  }
+}
+
+export async function getPlayerHistory(): Promise<PlayerHistoryEntry[]> {
+  await loadPlayerHistory();
+  return Array.from(playerHistory.values()).sort((a, b) =>
+    new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime()
+  );
+}
+
+export async function getOfflinePlayers(): Promise<PlayerHistoryEntry[]> {
+  await loadPlayerHistory();
+  const onlineNames = new Set(onlinePlayers.keys());
+  return Array.from(playerHistory.values())
+    .filter(p => !onlineNames.has(p.name))
+    .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime());
+}
 
 // Patterns for player events - Hytale Server specific patterns first
 // Player names can contain letters, numbers, underscores
@@ -113,12 +208,16 @@ export function removePlayer(name: string): void {
 }
 
 export function processLogLine(line: string): { event: 'join' | 'leave'; player: string } | null {
+  // Initialize history loading
+  loadPlayerHistory().catch(() => {});
+
   // Check for join
   for (const pattern of JOIN_PATTERNS) {
     const match = pattern.exec(line);
     if (match) {
       const player = match[1];
       onlinePlayers.set(player, new Date());
+      recordPlayerJoin(player);
       return { event: 'join', player };
     }
   }
@@ -128,6 +227,7 @@ export function processLogLine(line: string): { event: 'join' | 'leave'; player:
     const match = pattern.exec(line);
     if (match) {
       const player = match[1];
+      recordPlayerLeave(player);
       onlinePlayers.delete(player);
       return { event: 'leave', player };
     }
