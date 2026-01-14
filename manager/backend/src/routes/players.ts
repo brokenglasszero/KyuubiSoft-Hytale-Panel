@@ -123,7 +123,7 @@ router.delete('/:name/whitelist', authMiddleware, async (req: Request, res: Resp
 router.post('/:name/op', authMiddleware, async (req: Request, res: Response) => {
   const playerName = req.params.name;
 
-  const result = await dockerService.execCommand(`/op ${playerName}`);
+  const result = await dockerService.execCommand(`/op add ${playerName}`);
 
   if (result.success) {
     res.json({
@@ -142,7 +142,7 @@ router.post('/:name/op', authMiddleware, async (req: Request, res: Response) => 
 router.delete('/:name/op', authMiddleware, async (req: Request, res: Response) => {
   const playerName = req.params.name;
 
-  const result = await dockerService.execCommand(`/deop ${playerName}`);
+  const result = await dockerService.execCommand(`/op remove ${playerName}`);
 
   if (result.success) {
     res.json({
@@ -181,6 +181,205 @@ router.post('/:name/message', authMiddleware, async (req: Request, res: Response
     res.status(500).json({
       success: false,
       error: result.error || 'Failed to send message',
+    });
+  }
+});
+
+// POST /api/players/:name/teleport
+router.post('/:name/teleport', authMiddleware, async (req: Request, res: Response) => {
+  const playerName = req.params.name;
+  const { target, x, y, z } = req.body;
+
+  let command: string;
+  if (target) {
+    // Teleport to another player
+    command = `/teleport playertoplayer ${playerName} ${target}`;
+  } else if (x !== undefined && y !== undefined && z !== undefined) {
+    // Teleport to coordinates
+    command = `/teleport tocoordinates ${playerName} ${x} ${y} ${z}`;
+  } else {
+    res.status(400).json({
+      success: false,
+      error: 'Either target player or coordinates (x, y, z) required',
+    });
+    return;
+  }
+
+  const result = await dockerService.execCommand(command);
+
+  if (result.success) {
+    res.json({
+      success: true,
+      message: target ? `Teleported ${playerName} to ${target}` : `Teleported ${playerName} to ${x}, ${y}, ${z}`,
+    });
+  } else {
+    res.status(500).json({
+      success: false,
+      error: result.error || 'Failed to teleport player',
+    });
+  }
+});
+
+// POST /api/players/:name/kill
+router.post('/:name/kill', authMiddleware, async (req: Request, res: Response) => {
+  const playerName = req.params.name;
+
+  const result = await dockerService.execCommand(`/kill ${playerName}`);
+
+  if (result.success) {
+    res.json({
+      success: true,
+      message: `Player ${playerName} killed`,
+    });
+  } else {
+    res.status(500).json({
+      success: false,
+      error: result.error || 'Failed to kill player',
+    });
+  }
+});
+
+// POST /api/players/:name/respawn
+router.post('/:name/respawn', authMiddleware, async (req: Request, res: Response) => {
+  const playerName = req.params.name;
+
+  const result = await dockerService.execCommand(`/player respawn ${playerName}`);
+
+  if (result.success) {
+    res.json({
+      success: true,
+      message: `Player ${playerName} respawned`,
+    });
+  } else {
+    res.status(500).json({
+      success: false,
+      error: result.error || 'Failed to respawn player',
+    });
+  }
+});
+
+// POST /api/players/:name/gamemode
+router.post('/:name/gamemode', authMiddleware, async (req: Request, res: Response) => {
+  const playerName = req.params.name;
+  const { gamemode } = req.body;
+
+  if (!gamemode) {
+    res.status(400).json({
+      success: false,
+      error: 'Gamemode is required',
+    });
+    return;
+  }
+
+  const result = await dockerService.execCommand(`/gamemode ${gamemode} ${playerName}`);
+
+  if (result.success) {
+    res.json({
+      success: true,
+      message: `Set ${playerName}'s gamemode to ${gamemode}`,
+    });
+  } else {
+    res.status(500).json({
+      success: false,
+      error: result.error || 'Failed to change gamemode',
+    });
+  }
+});
+
+// POST /api/players/:name/give
+router.post('/:name/give', authMiddleware, async (req: Request, res: Response) => {
+  const playerName = req.params.name;
+  const { item, amount } = req.body;
+
+  if (!item) {
+    res.status(400).json({
+      success: false,
+      error: 'Item is required',
+    });
+    return;
+  }
+
+  const command = amount ? `/give ${playerName} ${item} ${amount}` : `/give ${playerName} ${item}`;
+  const result = await dockerService.execCommand(command);
+
+  if (result.success) {
+    res.json({
+      success: true,
+      message: `Gave ${amount || 1} ${item} to ${playerName}`,
+    });
+  } else {
+    res.status(500).json({
+      success: false,
+      error: result.error || 'Failed to give item',
+    });
+  }
+});
+
+// POST /api/players/:name/heal
+router.post('/:name/heal', authMiddleware, async (req: Request, res: Response) => {
+  const playerName = req.params.name;
+
+  const result = await dockerService.execCommand(`/player stats settomax ${playerName} health`);
+
+  if (result.success) {
+    res.json({
+      success: true,
+      message: `Player ${playerName} healed`,
+    });
+  } else {
+    res.status(500).json({
+      success: false,
+      error: result.error || 'Failed to heal player',
+    });
+  }
+});
+
+// POST /api/players/:name/effect
+router.post('/:name/effect', authMiddleware, async (req: Request, res: Response) => {
+  const playerName = req.params.name;
+  const { effect, action } = req.body;
+
+  if (!effect) {
+    res.status(400).json({
+      success: false,
+      error: 'Effect is required',
+    });
+    return;
+  }
+
+  const command = action === 'clear'
+    ? `/player effect clear ${playerName}`
+    : `/player effect apply ${playerName} ${effect}`;
+  const result = await dockerService.execCommand(command);
+
+  if (result.success) {
+    res.json({
+      success: true,
+      message: action === 'clear' ? `Cleared effects from ${playerName}` : `Applied ${effect} to ${playerName}`,
+    });
+  } else {
+    res.status(500).json({
+      success: false,
+      error: result.error || 'Failed to apply effect',
+    });
+  }
+});
+
+// POST /api/players/:name/inventory/clear
+router.post('/:name/inventory/clear', authMiddleware, async (req: Request, res: Response) => {
+  const playerName = req.params.name;
+
+  const result = await dockerService.execCommand(`/inventory clear ${playerName}`);
+
+  if (result.success) {
+    res.json({
+      success: true,
+      message: `Cleared ${playerName}'s inventory`,
+    });
+  } else {
+    res.status(500).json({
+      success: false,
+      error: result.error || 'Failed to clear inventory',
     });
   }
 });

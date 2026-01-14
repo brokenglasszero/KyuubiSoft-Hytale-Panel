@@ -2,6 +2,7 @@
   "common": {
     "loading": "Laden...",
     "save": "Speichern",
+    "saving": "Speichern...",
     "cancel": "Abbrechen",
     "delete": "Löschen",
     "confirm": "Bestätigen",
@@ -17,7 +18,8 @@
     "no": "Nein",
     "add": "Hinzufügen",
     "edit": "Bearbeiten",
-    "remove": "Entfernen"
+    "remove": "Entfernen",
+    "clear": "Leeren"
   },
   "auth": {
     "login": "Anmelden",
@@ -42,6 +44,7 @@
     "performance": "Performance",
     "configuration": "Konfiguration",
     "users": "Benutzer",
+    "activityLog": "Aktivitätslog",
     "server": "Server",
     "management": "Verwaltung",
     "data": "Daten"
@@ -121,7 +124,31 @@
     "noPlayers": "Keine Spieler online",
     "playerCount": "{count} Spieler online",
     "messagePlaceholder": "Nachricht senden...",
-    "op": "OP"
+    "op": "OP",
+    "deop": "OP entfernen",
+    "teleport": "Teleportieren",
+    "teleportTo": "Zu Spieler teleportieren",
+    "teleportCoords": "Zu Koordinaten teleportieren",
+    "kill": "Töten",
+    "respawn": "Respawnen",
+    "heal": "Heilen",
+    "gamemode": "Spielmodus",
+    "gamemodes": {
+      "survival": "Überleben",
+      "creative": "Kreativ",
+      "adventure": "Abenteuer",
+      "spectator": "Zuschauer"
+    },
+    "give": "Item geben",
+    "itemId": "Item ID",
+    "amount": "Anzahl",
+    "effect": "Effekt",
+    "clearEffects": "Effekte entfernen",
+    "clearInventory": "Inventar leeren",
+    "confirmKill": "Spieler wirklich töten?",
+    "confirmClearInventory": "Inventar dieses Spielers wirklich leeren?",
+    "moreActions": "Mehr Aktionen",
+    "coordinates": "Koordinaten"
   },
   "whitelist": {
     "title": "Whitelist & Bans",
@@ -189,7 +216,14 @@
     "disabled": "Deaktiviert",
     "active": "aktiv",
     "path": "Pfad",
-    "restartNote": "Server-Neustart erforderlich nach Aktivieren/Deaktivieren von Mods oder Plugins."
+    "restartNote": "Server-Neustart erforderlich nach Aktivieren/Deaktivieren von Mods oder Plugins.",
+    "upload": "Hochladen",
+    "confirmDelete": "\"{name}\" wirklich löschen?",
+    "configEditor": "Konfig-Editor",
+    "configFiles": "Konfigurationsdateien",
+    "noConfigs": "Keine Konfigurationsdateien gefunden",
+    "selectConfig": "Konfigurationsdatei zum Bearbeiten auswählen",
+    "editConfig": "Konfig bearbeiten"
   },
   "performance": {
     "title": "Performance Monitor",
@@ -254,6 +288,33 @@
     "you": "Du",
     "confirmDelete": "Benutzer \"{username}\" wirklich löschen?",
     "requiredFields": "Benutzername und Passwort erforderlich"
+  },
+  "activity": {
+    "title": "Aktivitätslog",
+    "subtitle": "Alle Aktionen auf dem Server verfolgen",
+    "noEntries": "Keine Aktivitätseinträge gefunden",
+    "timestamp": "Zeit",
+    "user": "Benutzer",
+    "action": "Aktion",
+    "target": "Ziel",
+    "details": "Details",
+    "category": "Kategorie",
+    "status": "Status",
+    "categories": {
+      "all": "Alle",
+      "player": "Spieler",
+      "server": "Server",
+      "backup": "Backup",
+      "config": "Konfiguration",
+      "mod": "Mod",
+      "user": "Benutzer",
+      "system": "System"
+    },
+    "success": "Erfolgreich",
+    "failed": "Fehlgeschlagen",
+    "clearLog": "Log leeren",
+    "confirmClear": "Aktivitätslog wirklich komplett leeren?",
+    "entries": "{count} Einträge"
   },
   "errors": {
     "connectionFailed": "Verbindung fehlgeschlagen",

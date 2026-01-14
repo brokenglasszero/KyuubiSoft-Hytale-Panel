@@ -20,6 +20,7 @@ import Performance from './views/Performance.vue'
 import Configuration from './views/Configuration.vue'
 import Mods from './views/Mods.vue'
 import Users from './views/Users.vue'
+import ActivityLog from './views/ActivityLog.vue'
 
 // Import auth store
 import { useAuthStore } from './stores/auth'
@@ -104,6 +105,12 @@ const router = createRouter({
       path: '/users',
       name: 'users',
       component: Users,
+      meta: { requiresAuth: true, requiresAdmin: true },
+    },
+    {
+      path: '/activity',
+      name: 'activity',
+      component: ActivityLog,
       meta: { requiresAuth: true, requiresAdmin: true },
     },
     {
