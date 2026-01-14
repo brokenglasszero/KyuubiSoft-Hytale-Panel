@@ -9,10 +9,10 @@ FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
 
 # Copy package files
-COPY frontend/package*.json ./
+COPY frontend/package.json ./
 
 # Install dependencies
-RUN npm ci
+RUN npm install
 
 # Copy frontend source
 COPY frontend/ ./
@@ -27,10 +27,10 @@ FROM node:20-alpine AS backend-builder
 WORKDIR /app/backend
 
 # Copy package files
-COPY backend/package*.json ./
+COPY backend/package.json ./
 
 # Install dependencies (including dev for build)
-RUN npm ci
+RUN npm install
 
 # Copy backend source
 COPY backend/ ./
@@ -48,8 +48,8 @@ LABEL description="Web-based management tool for Hytale servers"
 WORKDIR /app
 
 # Copy package files and install production dependencies only
-COPY backend/package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+COPY backend/package.json ./
+RUN npm install --omit=dev && npm cache clean --force
 
 # Copy built backend from builder
 COPY --from=backend-builder /app/backend/dist ./dist
