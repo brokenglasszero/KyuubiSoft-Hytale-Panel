@@ -1,0 +1,138 @@
+<script setup lang="ts">
+import { ref, watch, nextTick, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useConsoleStore } from '@/stores/console'
+import { useWebSocket } from '@/composables/useWebSocket'
+
+const { t } = useI18n()
+const consoleStore = useConsoleStore()
+const { sendCommand } = useWebSocket()
+
+const terminalRef = ref<HTMLDivElement | null>(null)
+const commandInput = ref('')
+
+function handleSubmit() {
+  if (!commandInput.value.trim()) return
+
+  sendCommand(commandInput.value)
+  commandInput.value = ''
+}
+
+function clearLogs() {
+  consoleStore.clearLogs()
+}
+
+function getLogClass(level: string): string {
+  switch (level.toUpperCase()) {
+    case 'ERROR':
+    case 'SEVERE':
+      return 'terminal-line error'
+    case 'WARN':
+    case 'WARNING':
+      return 'terminal-line warn'
+    case 'DEBUG':
+      return 'terminal-line debug'
+    default:
+      return 'terminal-line info'
+  }
+}
+
+// Auto-scroll to bottom when new logs arrive
+watch(
+  () => consoleStore.logs.length,
+  async () => {
+    if (consoleStore.autoScroll && terminalRef.value) {
+      await nextTick()
+      terminalRef.value.scrollTop = terminalRef.value.scrollHeight
+    }
+  }
+)
+
+// Initial scroll
+onMounted(() => {
+  if (terminalRef.value) {
+    terminalRef.value.scrollTop = terminalRef.value.scrollHeight
+  }
+})
+</script>
+
+<template>
+  <div class="flex flex-col h-full">
+    <!-- Terminal Output -->
+    <div
+      ref="terminalRef"
+      class="terminal flex-1 min-h-0 overflow-y-auto"
+    >
+      <div v-if="consoleStore.logs.length === 0" class="text-gray-500 text-center py-8">
+        {{ t('console.noLogs') }}
+      </div>
+      <div
+        v-for="log in consoleStore.logs"
+        :key="log.id"
+        :class="getLogClass(log.level)"
+      >
+        <span class="text-gray-500 mr-2">[{{ log.timestamp.split('T')[1]?.split('.')[0] || log.timestamp }}]</span>
+        <span :class="{
+          'text-status-error': log.level === 'ERROR',
+          'text-status-warning': log.level === 'WARN',
+          'text-gray-500': log.level === 'DEBUG',
+          'text-gray-300': log.level === 'INFO'
+        }">{{ log.message }}</span>
+      </div>
+    </div>
+
+    <!-- Command Input -->
+    <div class="mt-4">
+      <form @submit.prevent="handleSubmit" class="flex gap-2">
+        <input
+          v-model="commandInput"
+          type="text"
+          :placeholder="t('console.commandPlaceholder')"
+          class="input flex-1 font-mono"
+        />
+        <button type="submit" class="btn btn-primary">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+          </svg>
+        </button>
+      </form>
+
+      <!-- Controls -->
+      <div class="flex items-center justify-between mt-3">
+        <div class="flex items-center gap-4">
+          <button
+            @click="clearLogs"
+            class="text-sm text-gray-400 hover:text-white flex items-center gap-1"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            {{ t('console.clear') }}
+          </button>
+
+          <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+            <input
+              type="checkbox"
+              :checked="consoleStore.autoScroll"
+              @change="consoleStore.toggleAutoScroll()"
+              class="rounded border-dark-50 bg-dark-300 text-hytale-orange focus:ring-hytale-orange"
+            />
+            {{ t('console.autoScroll') }}
+          </label>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <span
+            :class="[
+              'w-2 h-2 rounded-full',
+              consoleStore.connected ? 'bg-status-success' : 'bg-status-error'
+            ]"
+          />
+          <span class="text-sm text-gray-400">
+            {{ consoleStore.connected ? t('console.connected') : t('console.disconnected') }}
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
