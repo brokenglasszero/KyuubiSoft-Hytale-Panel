@@ -2,6 +2,7 @@
   "common": {
     "loading": "Loading...",
     "save": "Save",
+    "saving": "Saving...",
     "cancel": "Cancel",
     "delete": "Delete",
     "confirm": "Confirm",
@@ -17,7 +18,8 @@
     "no": "No",
     "add": "Add",
     "edit": "Edit",
-    "remove": "Remove"
+    "remove": "Remove",
+    "clear": "Clear"
   },
   "auth": {
     "login": "Login",
@@ -41,6 +43,8 @@
     "mods": "Mods & Plugins",
     "performance": "Performance",
     "configuration": "Configuration",
+    "users": "Users",
+    "activityLog": "Activity Log",
     "server": "Server",
     "management": "Management",
     "data": "Data"
@@ -120,7 +124,31 @@
     "noPlayers": "No players online",
     "playerCount": "{count} players online",
     "messagePlaceholder": "Send message...",
-    "op": "OP"
+    "op": "OP",
+    "deop": "Remove OP",
+    "teleport": "Teleport",
+    "teleportTo": "Teleport to Player",
+    "teleportCoords": "Teleport to Coordinates",
+    "kill": "Kill",
+    "respawn": "Respawn",
+    "heal": "Heal",
+    "gamemode": "Gamemode",
+    "gamemodes": {
+      "survival": "Survival",
+      "creative": "Creative",
+      "adventure": "Adventure",
+      "spectator": "Spectator"
+    },
+    "give": "Give Item",
+    "itemId": "Item ID",
+    "amount": "Amount",
+    "effect": "Effect",
+    "clearEffects": "Clear Effects",
+    "clearInventory": "Clear Inventory",
+    "confirmKill": "Really kill this player?",
+    "confirmClearInventory": "Really clear this player's inventory?",
+    "moreActions": "More Actions",
+    "coordinates": "Coordinates"
   },
   "whitelist": {
     "title": "Whitelist & Bans",
@@ -188,7 +216,14 @@
     "disabled": "Disabled",
     "active": "active",
     "path": "Path",
-    "restartNote": "Server restart required after enabling/disabling mods or plugins."
+    "restartNote": "Server restart required after enabling/disabling mods or plugins.",
+    "upload": "Upload",
+    "confirmDelete": "Really delete \"{name}\"?",
+    "configEditor": "Config Editor",
+    "configFiles": "Config Files",
+    "noConfigs": "No config files found",
+    "selectConfig": "Select a config file to edit",
+    "editConfig": "Edit Config"
   },
   "performance": {
     "title": "Performance Monitor",
@@ -223,6 +258,63 @@
     "unsavedChanges": "Unsaved changes",
     "configSaved": "Configuration saved",
     "configWarning": "Warning: Invalid configuration may break the server. A server restart is required after saving."
+  },
+  "users": {
+    "title": "User Management",
+    "subtitle": "Manage panel users",
+    "addUser": "Add User",
+    "editUser": "Edit User",
+    "usersList": "Users",
+    "noUsers": "No users found",
+    "username": "Username",
+    "usernamePlaceholder": "Enter username...",
+    "password": "Password",
+    "passwordPlaceholder": "Enter password...",
+    "newPassword": "New Password",
+    "newPasswordPlaceholder": "Enter new password...",
+    "leaveBlank": "Leave blank to keep current password",
+    "role": "Role",
+    "roles": {
+      "admin": "Administrator",
+      "moderator": "Moderator",
+      "viewer": "Viewer"
+    },
+    "rolesInfo": "User Roles",
+    "adminDesc": "Full access to all features",
+    "moderatorDesc": "Can manage server but not users",
+    "viewerDesc": "Read-only access",
+    "created": "Created",
+    "lastLogin": "Last Login",
+    "you": "You",
+    "confirmDelete": "Really delete user \"{username}\"?",
+    "requiredFields": "Username and password required"
+  },
+  "activity": {
+    "title": "Activity Log",
+    "subtitle": "Track all actions performed on the server",
+    "noEntries": "No activity entries found",
+    "timestamp": "Time",
+    "user": "User",
+    "action": "Action",
+    "target": "Target",
+    "details": "Details",
+    "category": "Category",
+    "status": "Status",
+    "categories": {
+      "all": "All",
+      "player": "Player",
+      "server": "Server",
+      "backup": "Backup",
+      "config": "Config",
+      "mod": "Mod",
+      "user": "User",
+      "system": "System"
+    },
+    "success": "Success",
+    "failed": "Failed",
+    "clearLog": "Clear Log",
+    "confirmClear": "Really clear the entire activity log?",
+    "entries": "{count} entries"
   },
   "errors": {
     "connectionFailed": "Connection failed",

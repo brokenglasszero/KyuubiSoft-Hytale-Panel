@@ -68,4 +68,44 @@ export const playersApi = {
     const response = await api.post<ActionResponse>(`/players/${playerName}/message`, { message })
     return response.data
   },
+
+  async teleport(playerName: string, options: { target?: string; x?: number; y?: number; z?: number }): Promise<ActionResponse> {
+    const response = await api.post<ActionResponse>(`/players/${playerName}/teleport`, options)
+    return response.data
+  },
+
+  async kill(playerName: string): Promise<ActionResponse> {
+    const response = await api.post<ActionResponse>(`/players/${playerName}/kill`)
+    return response.data
+  },
+
+  async respawn(playerName: string): Promise<ActionResponse> {
+    const response = await api.post<ActionResponse>(`/players/${playerName}/respawn`)
+    return response.data
+  },
+
+  async gamemode(playerName: string, gamemode: string): Promise<ActionResponse> {
+    const response = await api.post<ActionResponse>(`/players/${playerName}/gamemode`, { gamemode })
+    return response.data
+  },
+
+  async give(playerName: string, item: string, amount?: number): Promise<ActionResponse> {
+    const response = await api.post<ActionResponse>(`/players/${playerName}/give`, { item, amount })
+    return response.data
+  },
+
+  async heal(playerName: string): Promise<ActionResponse> {
+    const response = await api.post<ActionResponse>(`/players/${playerName}/heal`)
+    return response.data
+  },
+
+  async clearEffects(playerName: string): Promise<ActionResponse> {
+    const response = await api.post<ActionResponse>(`/players/${playerName}/effect`, { effect: 'all', action: 'clear' })
+    return response.data
+  },
+
+  async clearInventory(playerName: string): Promise<ActionResponse> {
+    const response = await api.post<ActionResponse>(`/players/${playerName}/inventory/clear`)
+    return response.data
+  },
 }

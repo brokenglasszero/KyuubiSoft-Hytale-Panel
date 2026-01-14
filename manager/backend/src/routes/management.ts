@@ -1,8 +1,56 @@
 import { Router, Request, Response } from 'express';
-import { readFile, writeFile, readdir, stat } from 'fs/promises';
+import { readFile, writeFile, readdir, stat, unlink } from 'fs/promises';
 import path from 'path';
+import multer from 'multer';
 import { authMiddleware } from '../middleware/auth.js';
 import { config } from '../config.js';
+import { logActivity, getActivityLog, clearActivityLog, type ActivityLogEntry } from '../services/activityLog.js';
+import type { AuthenticatedRequest } from '../types/index.js';
+
+// Configure multer for file uploads
+const modsStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, config.modsPath);
+  },
+  filename: (_req, file, cb) => {
+    cb(null, file.originalname);
+  },
+});
+
+const pluginsStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, config.pluginsPath);
+  },
+  filename: (_req, file, cb) => {
+    cb(null, file.originalname);
+  },
+});
+
+const uploadMod = multer({
+  storage: modsStorage,
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (['.jar', '.zip', '.js', '.lua', '.dll', '.so'].includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Allowed: .jar, .zip, .js, .lua, .dll, .so'));
+    }
+  },
+});
+
+const uploadPlugin = multer({
+  storage: pluginsStorage,
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (['.jar', '.zip', '.js', '.lua', '.dll', '.so'].includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Allowed: .jar, .zip, .js, .lua, .dll, .so'));
+    }
+  },
+});
 
 const router = Router();
 
@@ -525,5 +573,287 @@ export function addStatsEntry(entry: Omit<StatsEntry, 'timestamp'>): void {
 router.get('/stats/history', authMiddleware, async (_req: Request, res: Response) => {
   res.json({ history: statsHistory });
 });
+
+// ============== FILE UPLOAD FOR MODS & PLUGINS ==============
+
+// POST /api/management/mods/upload
+router.post('/mods/upload', authMiddleware, uploadMod.single('file'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.file) {
+      res.status(400).json({ error: 'No file uploaded' });
+      return;
+    }
+
+    await logActivity(
+      req.user || 'unknown',
+      'upload_mod',
+      'mod',
+      true,
+      req.file.originalname,
+      `Uploaded mod: ${req.file.originalname} (${(req.file.size / 1024 / 1024).toFixed(2)} MB)`
+    );
+
+    res.json({
+      success: true,
+      filename: req.file.originalname,
+      size: req.file.size,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to upload mod' });
+  }
+});
+
+// POST /api/management/plugins/upload
+router.post('/plugins/upload', authMiddleware, uploadPlugin.single('file'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.file) {
+      res.status(400).json({ error: 'No file uploaded' });
+      return;
+    }
+
+    await logActivity(
+      req.user || 'unknown',
+      'upload_plugin',
+      'mod',
+      true,
+      req.file.originalname,
+      `Uploaded plugin: ${req.file.originalname} (${(req.file.size / 1024 / 1024).toFixed(2)} MB)`
+    );
+
+    res.json({
+      success: true,
+      filename: req.file.originalname,
+      size: req.file.size,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to upload plugin' });
+  }
+});
+
+// DELETE /api/management/mods/:filename
+router.delete('/mods/:filename', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { filename } = req.params;
+    const filePath = path.join(config.modsPath, filename);
+    await unlink(filePath);
+
+    await logActivity(
+      req.user || 'unknown',
+      'delete_mod',
+      'mod',
+      true,
+      filename,
+      `Deleted mod: ${filename}`
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete mod' });
+  }
+});
+
+// DELETE /api/management/plugins/:filename
+router.delete('/plugins/:filename', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { filename } = req.params;
+    const filePath = path.join(config.pluginsPath, filename);
+    await unlink(filePath);
+
+    await logActivity(
+      req.user || 'unknown',
+      'delete_plugin',
+      'mod',
+      true,
+      filename,
+      `Deleted plugin: ${filename}`
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete plugin' });
+  }
+});
+
+// ============== MOD/PLUGIN CONFIG FILES ==============
+
+// GET /api/management/mods/:filename/configs
+router.get('/mods/:filename/configs', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { filename } = req.params;
+    const modName = filename.replace(/\.(jar|zip|disabled)$/i, '');
+
+    // Check common config locations
+    const configPaths = [
+      path.join(config.modsPath, modName),
+      path.join(config.modsPath, 'config', modName),
+      path.join(config.serverPath, 'config', modName),
+      path.join(config.dataPath, 'config', modName),
+    ];
+
+    const configs: { name: string; path: string }[] = [];
+
+    for (const configPath of configPaths) {
+      try {
+        const entries = await readdir(configPath);
+        for (const entry of entries) {
+          const ext = path.extname(entry).toLowerCase();
+          if (['.json', '.yml', '.yaml', '.toml', '.cfg', '.conf', '.properties'].includes(ext)) {
+            configs.push({
+              name: entry,
+              path: path.join(configPath, entry),
+            });
+          }
+        }
+      } catch {
+        // Directory doesn't exist
+      }
+    }
+
+    res.json({ configs });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get mod configs' });
+  }
+});
+
+// GET /api/management/plugins/:filename/configs
+router.get('/plugins/:filename/configs', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { filename } = req.params;
+    const pluginName = filename.replace(/\.(jar|zip|disabled)$/i, '');
+
+    // Check common config locations
+    const configPaths = [
+      path.join(config.pluginsPath, pluginName),
+      path.join(config.pluginsPath, 'config', pluginName),
+      path.join(config.serverPath, 'plugins', pluginName),
+      path.join(config.dataPath, 'plugins', pluginName),
+    ];
+
+    const configs: { name: string; path: string }[] = [];
+
+    for (const configPath of configPaths) {
+      try {
+        const entries = await readdir(configPath);
+        for (const entry of entries) {
+          const ext = path.extname(entry).toLowerCase();
+          if (['.json', '.yml', '.yaml', '.toml', '.cfg', '.conf', '.properties'].includes(ext)) {
+            configs.push({
+              name: entry,
+              path: path.join(configPath, entry),
+            });
+          }
+        }
+      } catch {
+        // Directory doesn't exist
+      }
+    }
+
+    res.json({ configs });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get plugin configs' });
+  }
+});
+
+// GET /api/management/config/read
+router.get('/config/read', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const configPath = req.query.path as string;
+    if (!configPath) {
+      res.status(400).json({ error: 'Path required' });
+      return;
+    }
+
+    // Security: ensure path is within allowed directories
+    const normalizedPath = path.normalize(configPath);
+    const allowedPrefixes = [config.modsPath, config.pluginsPath, config.serverPath, config.dataPath];
+    const isAllowed = allowedPrefixes.some(prefix => normalizedPath.startsWith(prefix));
+
+    if (!isAllowed) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+
+    const content = await readFile(configPath, 'utf-8');
+    res.json({ content, path: configPath });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to read config' });
+  }
+});
+
+// PUT /api/management/config/write
+router.put('/config/write', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { path: configPath, content } = req.body;
+    if (!configPath || content === undefined) {
+      res.status(400).json({ error: 'Path and content required' });
+      return;
+    }
+
+    // Security: ensure path is within allowed directories
+    const normalizedPath = path.normalize(configPath);
+    const allowedPrefixes = [config.modsPath, config.pluginsPath, config.serverPath, config.dataPath];
+    const isAllowed = allowedPrefixes.some(prefix => normalizedPath.startsWith(prefix));
+
+    if (!isAllowed) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+
+    await writeFile(configPath, content, 'utf-8');
+
+    await logActivity(
+      req.user || 'unknown',
+      'edit_config',
+      'config',
+      true,
+      path.basename(configPath),
+      `Edited config: ${configPath}`
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to write config' });
+  }
+});
+
+// ============== ACTIVITY LOG ==============
+
+// GET /api/management/activity
+router.get('/activity', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const offset = parseInt(req.query.offset as string) || 0;
+    const category = req.query.category as ActivityLogEntry['category'] | undefined;
+    const user = req.query.user as string | undefined;
+
+    const result = getActivityLog({ limit, offset, category, user });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get activity log' });
+  }
+});
+
+// DELETE /api/management/activity
+router.delete('/activity', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    await clearActivityLog();
+
+    await logActivity(
+      req.user || 'unknown',
+      'clear_activity_log',
+      'system',
+      true,
+      undefined,
+      'Cleared activity log'
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to clear activity log' });
+  }
+});
+
+// Helper function to log activity from other routes
+export { logActivity };
 
 export default router;

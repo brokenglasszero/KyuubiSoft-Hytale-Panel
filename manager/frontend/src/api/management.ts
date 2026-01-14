@@ -127,6 +127,11 @@ export interface ModInfo {
   enabled: boolean
 }
 
+export interface ConfigFile {
+  name: string
+  path: string
+}
+
 export const modsApi = {
   async get(): Promise<{ mods: ModInfo[]; path: string }> {
     const response = await api.get<{ mods: ModInfo[]; path: string }>('/management/mods')
@@ -135,6 +140,25 @@ export const modsApi = {
 
   async toggle(filename: string): Promise<{ success: boolean }> {
     const response = await api.put<{ success: boolean }>(`/management/mods/${encodeURIComponent(filename)}/toggle`)
+    return response.data
+  },
+
+  async upload(file: File): Promise<{ success: boolean; filename: string; size: number }> {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await api.post<{ success: boolean; filename: string; size: number }>('/management/mods/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return response.data
+  },
+
+  async delete(filename: string): Promise<{ success: boolean }> {
+    const response = await api.delete<{ success: boolean }>(`/management/mods/${encodeURIComponent(filename)}`)
+    return response.data
+  },
+
+  async getConfigs(filename: string): Promise<{ configs: ConfigFile[] }> {
+    const response = await api.get<{ configs: ConfigFile[] }>(`/management/mods/${encodeURIComponent(filename)}/configs`)
     return response.data
   },
 }
@@ -147,6 +171,37 @@ export const pluginsApi = {
 
   async toggle(filename: string): Promise<{ success: boolean }> {
     const response = await api.put<{ success: boolean }>(`/management/plugins/${encodeURIComponent(filename)}/toggle`)
+    return response.data
+  },
+
+  async upload(file: File): Promise<{ success: boolean; filename: string; size: number }> {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await api.post<{ success: boolean; filename: string; size: number }>('/management/plugins/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return response.data
+  },
+
+  async delete(filename: string): Promise<{ success: boolean }> {
+    const response = await api.delete<{ success: boolean }>(`/management/plugins/${encodeURIComponent(filename)}`)
+    return response.data
+  },
+
+  async getConfigs(filename: string): Promise<{ configs: ConfigFile[] }> {
+    const response = await api.get<{ configs: ConfigFile[] }>(`/management/plugins/${encodeURIComponent(filename)}/configs`)
+    return response.data
+  },
+}
+
+export const configApi = {
+  async read(path: string): Promise<{ content: string; path: string }> {
+    const response = await api.get<{ content: string; path: string }>('/management/config/read', { params: { path } })
+    return response.data
+  },
+
+  async write(path: string, content: string): Promise<{ success: boolean }> {
+    const response = await api.put<{ success: boolean }>('/management/config/write', { path, content })
     return response.data
   },
 }
@@ -163,6 +218,31 @@ export interface StatsEntry {
 export const statsApi = {
   async getHistory(): Promise<{ history: StatsEntry[] }> {
     const response = await api.get<{ history: StatsEntry[] }>('/management/stats/history')
+    return response.data
+  },
+}
+
+// ============== ACTIVITY LOG ==============
+
+export interface ActivityLogEntry {
+  id: string
+  timestamp: string
+  user: string
+  action: string
+  target?: string
+  details?: string
+  category: 'player' | 'server' | 'backup' | 'config' | 'mod' | 'user' | 'system'
+  success: boolean
+}
+
+export const activityApi = {
+  async get(options?: { limit?: number; offset?: number; category?: string; user?: string }): Promise<{ entries: ActivityLogEntry[]; total: number }> {
+    const response = await api.get<{ entries: ActivityLogEntry[]; total: number }>('/management/activity', { params: options })
+    return response.data
+  },
+
+  async clear(): Promise<{ success: boolean }> {
+    const response = await api.delete<{ success: boolean }>('/management/activity')
     return response.data
   },
 }
