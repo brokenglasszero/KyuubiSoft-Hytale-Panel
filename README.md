@@ -56,12 +56,17 @@ Vollautomatisches Docker-Setup für Hytale Server mit modernem Web-basiertem Adm
 |---------|--------------|
 | **Auto-Download** | Automatischer Server-Download via offiziellem Hytale Downloader |
 | **Web Admin Panel** | Modernes UI mit Dark Theme und Echtzeit-Updates |
-| **Multi-User** | Mehrere Benutzer mit Rollen (Admin, Moderator, Viewer) |
+| **Multi-User** | Mehrere Benutzer mit Rollen (Admin, Moderator, Operator, Viewer) |
 | **Live Console** | Echtzeit-Logs mit Filterung und Auto-Scroll |
 | **Performance Monitor** | CPU, RAM und Spieler-Statistiken mit Graphen |
 | **Spieler Verwaltung** | Kick, Ban, Teleport, Gamemode, Items geben, Heal und mehr |
+| **Spieler Statistiken** | Top-Spieler, Spielzeit-Tracking, Aktivitäts-Trends |
 | **Mods & Plugins** | Upload, Aktivieren/Deaktivieren, Config Editor |
 | **Backups** | Automatische und manuelle Backups mit Restore |
+| **Geplante Backups** | Tägliche automatische Backups zu einstellbarer Uhrzeit |
+| **Server Broadcasts** | Nachrichten an alle Spieler, geplante Ankündigungen |
+| **Quick Commands** | Ein-Klick Befehle für häufige Server-Aktionen |
+| **Quick Settings** | Schnelleinstellungen für ServerName, MOTD, MaxPlayers |
 | **Whitelist & Bans** | Komplette Zugriffskontrolle |
 | **Permissions** | Benutzer und Gruppen mit Berechtigungen |
 | **Activity Log** | Alle Admin-Aktionen werden protokolliert |
@@ -133,14 +138,28 @@ Das Admin Panel ist unter `http://SERVER-IP:3000` erreichbar.
 - Dashboard mit Server-Status und Ressourcen
 - Live Console mit Log-Filterung und Command-Historie
 - Performance Monitoring mit Echtzeit-Graphen
+- **Spieler Statistiken** mit Top-Spielern und Aktivitäts-Charts
 - Spieler Verwaltung mit erweiterten Aktionen
 - Whitelist & Ban System
 - Permissions Verwaltung (Benutzer & Gruppen)
 - Mods & Plugins mit Upload und Config Editor
 - Backup System mit Restore-Funktion
+- **Geplante Backups** mit automatischer Rotation
+- **Server Broadcasts** und geplante Ankündigungen
+- **Quick Commands** für häufige Aktionen
+- **Quick Settings** für Servername, MOTD, Passwort, MaxPlayers
 - Server Config Editor
 - Activity Log für alle Aktionen
-- Multi-User mit Rollen-System
+- Multi-User mit Rollen-System (Admin, Moderator, Operator, Viewer)
+
+### Benutzerrollen
+
+| Rolle | Rechte |
+|-------|--------|
+| **Admin** | Vollzugriff auf alle Funktionen |
+| **Moderator** | Server-Verwaltung, aber keine Benutzerverwaltung |
+| **Operator** | Dashboard, Console, Performance, Server-Neustart |
+| **Viewer** | Nur Lesezugriff |
 
 ### Umgebungsvariablen
 
@@ -215,12 +234,17 @@ Fully automated Docker setup for Hytale Server with modern web-based admin panel
 |---------|-------------|
 | **Auto-Download** | Automatic server download via official Hytale Downloader |
 | **Web Admin Panel** | Modern UI with dark theme and real-time updates |
-| **Multi-User** | Multiple users with roles (Admin, Moderator, Viewer) |
+| **Multi-User** | Multiple users with roles (Admin, Moderator, Operator, Viewer) |
 | **Live Console** | Real-time logs with filtering and auto-scroll |
 | **Performance Monitor** | CPU, RAM and player statistics with graphs |
 | **Player Management** | Kick, ban, teleport, gamemode, give items, heal and more |
+| **Player Statistics** | Top players, playtime tracking, activity trends |
 | **Mods & Plugins** | Upload, enable/disable, config editor |
 | **Backups** | Automatic and manual backups with restore |
+| **Scheduled Backups** | Daily automatic backups at configurable time |
+| **Server Broadcasts** | Messages to all players, scheduled announcements |
+| **Quick Commands** | One-click commands for common server actions |
+| **Quick Settings** | Fast config for ServerName, MOTD, MaxPlayers |
 | **Whitelist & Bans** | Complete access control |
 | **Permissions** | Users and groups with permissions |
 | **Activity Log** | All admin actions are logged |
@@ -292,14 +316,28 @@ The admin panel is available at `http://SERVER-IP:3000`.
 - Dashboard with server status and resources
 - Live console with log filtering and command history
 - Performance monitoring with real-time graphs
+- **Player Statistics** with top players and activity charts
 - Player management with extended actions
 - Whitelist & ban system
 - Permissions management (users & groups)
 - Mods & plugins with upload and config editor
 - Backup system with restore function
+- **Scheduled Backups** with automatic rotation
+- **Server Broadcasts** and scheduled announcements
+- **Quick Commands** for common actions
+- **Quick Settings** for server name, MOTD, password, max players
 - Server config editor
 - Activity log for all actions
-- Multi-user with role system
+- Multi-user with role system (Admin, Moderator, Operator, Viewer)
+
+### User Roles
+
+| Role | Permissions |
+|------|-------------|
+| **Admin** | Full access to all features |
+| **Moderator** | Server management, but no user management |
+| **Operator** | Dashboard, console, performance, server restart |
+| **Viewer** | Read-only access |
 
 ### Environment Variables
 
