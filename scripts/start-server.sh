@@ -40,6 +40,7 @@ JAVA_ARGS=(
 # Server arguments
 SERVER_ARGS=(
     "--assets" "Assets.zip"
+    "--accept-early-plugins"
     "--bind" "${SERVER_BIND}:${SERVER_PORT}"
 )
 
