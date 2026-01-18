@@ -74,6 +74,23 @@ export interface UpdateCheckResponse {
   installedVersion: string
   latestVersion: string
   updateAvailable: boolean
+  patchline?: string
+  versions?: {
+    release: string
+    preRelease: string
+  }
+  message: string
+}
+
+export interface PatchlineResponse {
+  patchline: string
+  options: string[]
+}
+
+export interface PatchlineUpdateResponse {
+  success: boolean
+  patchline: string
+  changed?: boolean
   message: string
 }
 
@@ -199,6 +216,16 @@ export const serverApi = {
 
   async checkForUpdates(): Promise<UpdateCheckResponse> {
     const response = await api.get<UpdateCheckResponse>('/server/check-update')
+    return response.data
+  },
+
+  async getPatchline(): Promise<PatchlineResponse> {
+    const response = await api.get<PatchlineResponse>('/server/patchline')
+    return response.data
+  },
+
+  async setPatchline(patchline: string): Promise<PatchlineUpdateResponse> {
+    const response = await api.put<PatchlineUpdateResponse>('/server/patchline', { patchline })
     return response.data
   },
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted, computed } from 'vue'
+import { ref, watch, nextTick, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useConsoleStore } from '@/stores/console'
 import { useWebSocket } from '@/composables/useWebSocket'
@@ -7,7 +7,7 @@ import { formatLogMessage } from '@/utils/formatItemPath'
 
 const { t } = useI18n()
 const consoleStore = useConsoleStore()
-const { sendCommand } = useWebSocket()
+const { sendCommand, reconnect, loadAllLogs, isLoadingLogs } = useWebSocket()
 
 const terminalRef = ref<HTMLDivElement | null>(null)
 const inputRef = ref<HTMLInputElement | null>(null)
@@ -284,23 +284,70 @@ function getLogClass(level: string): string {
   }
 }
 
-// Auto-scroll to bottom when new logs arrive
-watch(
-  () => consoleStore.logs.length,
-  async () => {
-    if (consoleStore.autoScroll && terminalRef.value) {
-      await nextTick()
-      terminalRef.value.scrollTop = terminalRef.value.scrollHeight
-    }
-  }
-)
+// Scroll to bottom helper - scrolls multiple times to ensure it works
+function scrollToBottom(retries = 3) {
+  if (!terminalRef.value) return
 
-// Initial scroll
+  const el = terminalRef.value
+  el.scrollTop = el.scrollHeight
+
+  // Retry a few times to handle delayed renders
+  if (retries > 0) {
+    requestAnimationFrame(() => {
+      if (el.scrollTop < el.scrollHeight - el.clientHeight - 10) {
+        el.scrollTop = el.scrollHeight
+        if (retries > 1) {
+          requestAnimationFrame(() => scrollToBottom(retries - 1))
+        }
+      }
+    })
+  }
+}
+
+// Check if user has scrolled up (not at bottom)
+function isScrolledToBottom(): boolean {
+  if (!terminalRef.value) return true
+  const el = terminalRef.value
+  // Allow 50px tolerance
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 50
+}
+
+// Auto-scroll interval - more reliable than watchers for continuous updates
+let autoScrollInterval: ReturnType<typeof setInterval> | null = null
+
 onMounted(() => {
-  if (terminalRef.value) {
-    terminalRef.value.scrollTop = terminalRef.value.scrollHeight
+  // Initial scroll
+  scrollToBottom()
+
+  // Poll-based auto-scroll - checks every 100ms if we should scroll
+  autoScrollInterval = setInterval(() => {
+    if (consoleStore.autoScroll && terminalRef.value) {
+      const el = terminalRef.value
+      // Only scroll if not already at bottom
+      if (el.scrollHeight - el.scrollTop - el.clientHeight > 5) {
+        el.scrollTop = el.scrollHeight
+      }
+    }
+  }, 100)
+})
+
+onUnmounted(() => {
+  if (autoScrollInterval) {
+    clearInterval(autoScrollInterval)
+    autoScrollInterval = null
   }
 })
+
+// Also trigger scroll on log changes for immediate response
+watch(
+  () => consoleStore.logsUpdated,
+  () => {
+    if (consoleStore.autoScroll) {
+      scrollToBottom()
+    }
+  },
+  { flush: 'post' }
+)
 </script>
 
 <template>
@@ -451,6 +498,22 @@ onMounted(() => {
             {{ t('console.clear') }}
           </button>
 
+          <!-- Load All Logs Button -->
+          <button
+            @click="loadAllLogs(0)"
+            :disabled="isLoadingLogs"
+            class="text-sm text-gray-400 hover:text-white flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg v-if="isLoadingLogs" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            {{ t('console.loadAll') }}
+          </button>
+
           <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
             <input
               type="checkbox"
@@ -467,16 +530,31 @@ onMounted(() => {
           </span>
         </div>
 
-        <div class="flex items-center gap-2">
-          <span
-            :class="[
-              'w-2 h-2 rounded-full',
-              consoleStore.connected ? 'bg-status-success' : 'bg-status-error'
-            ]"
-          />
-          <span class="text-sm text-gray-400">
-            {{ consoleStore.connected ? t('console.connected') : t('console.disconnected') }}
-          </span>
+        <div class="flex items-center gap-3">
+          <!-- Reconnect Button -->
+          <button
+            v-if="!consoleStore.connected"
+            @click="reconnect"
+            class="text-sm text-hytale-orange hover:text-hytale-orange-light flex items-center gap-1"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {{ t('console.reconnect') }}
+          </button>
+
+          <!-- Connection Status -->
+          <div class="flex items-center gap-2">
+            <span
+              :class="[
+                'w-2 h-2 rounded-full',
+                consoleStore.connected ? 'bg-status-success' : 'bg-status-error'
+              ]"
+            />
+            <span class="text-sm text-gray-400">
+              {{ consoleStore.connected ? t('console.connected') : t('console.disconnected') }}
+            </span>
+          </div>
         </div>
       </div>
     </div>

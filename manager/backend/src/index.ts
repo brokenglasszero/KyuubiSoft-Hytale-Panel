@@ -18,15 +18,24 @@ import backupRoutes from './routes/backup.js';
 import playersRoutes from './routes/players.js';
 import managementRoutes from './routes/management.js';
 import schedulerRoutes from './routes/scheduler.js';
+import assetsRoutes from './routes/assets.js';
 
 // Services
 import { startSchedulers } from './services/scheduler.js';
+import { initializePlayerTracking } from './services/players.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = createServer(app);
+
+// Reverse Proxy Support - must be set before other middleware
+// This enables proper handling of X-Forwarded-* headers when behind nginx, traefik, etc.
+if (config.trustProxy) {
+  app.set('trust proxy', 1);
+  console.log('Reverse proxy mode enabled (TRUST_PROXY=true)');
+}
 
 // WebSocket server
 const wss = new WebSocketServer({ server, path: '/api/console/ws' });
@@ -51,6 +60,7 @@ app.use('/api/backups', backupRoutes);
 app.use('/api/players', playersRoutes);
 app.use('/api/management', managementRoutes);
 app.use('/api/scheduler', schedulerRoutes);
+app.use('/api/assets', assetsRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {
@@ -93,6 +103,11 @@ server.listen(config.port, '0.0.0.0', () => {
 
   // SECURITY: Check for insecure default credentials
   checkSecurityConfig();
+
+  // Initialize player tracking (load persisted data)
+  initializePlayerTracking().catch(err => {
+    console.error('Failed to initialize player tracking:', err);
+  });
 
   // Start schedulers
   startSchedulers();

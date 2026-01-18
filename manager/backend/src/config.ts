@@ -25,10 +25,16 @@ export const config = {
   dataPath: process.env.DATA_PATH || '/opt/hytale/data',
   modsPath: process.env.MODS_PATH || '/opt/hytale/mods',
   pluginsPath: process.env.PLUGINS_PATH || '/opt/hytale/plugins',
+  assetsPath: process.env.ASSETS_PATH || '/opt/hytale/assets', // Extracted assets cache (not backed up)
 
   // Server
   port: parseInt(process.env.MANAGER_PORT || '18080', 10),
   corsOrigins: process.env.CORS_ORIGINS || '*',
+
+  // Reverse Proxy Support
+  // Set to true/1 when running behind a reverse proxy (nginx, traefik, etc.)
+  // This enables proper handling of X-Forwarded-* headers
+  trustProxy: process.env.TRUST_PROXY === 'true' || process.env.TRUST_PROXY === '1',
 
   // Timezone
   tz: process.env.TZ || 'Europe/Berlin',

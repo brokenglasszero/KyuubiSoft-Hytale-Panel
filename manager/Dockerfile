@@ -45,6 +45,9 @@ FROM node:20-alpine
 LABEL maintainer="Hytale Server Manager"
 LABEL description="Web-based management tool for Hytale servers"
 
+# Install wget for healthcheck
+RUN apk add --no-cache wget
+
 WORKDIR /app
 
 # Copy package files and install production dependencies only
@@ -71,8 +74,8 @@ ENV MANAGER_PORT=18080
 EXPOSE 18080
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:18080/api/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD wget --quiet --tries=1 -O /dev/null http://localhost:18080/api/health || exit 1
 
 # Run the application
 CMD ["node", "dist/index.js"]

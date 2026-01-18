@@ -180,6 +180,104 @@ router.post('/restart', authMiddleware, async (_req: Request, res: Response) => 
   res.json(result);
 });
 
+// Panel config file path (for patchline setting)
+const PANEL_CONFIG_PATH = '/opt/hytale/data/panel-config.json';
+
+// Helper to read panel config
+async function readPanelConfig(): Promise<{ patchline: string }> {
+  try {
+    const content = await readFile(PANEL_CONFIG_PATH, 'utf-8');
+    return JSON.parse(content);
+  } catch {
+    // Return defaults if file doesn't exist
+    return { patchline: process.env.HYTALE_PATCHLINE || 'release' };
+  }
+}
+
+// Helper to write panel config
+async function writePanelConfig(config: { patchline: string }): Promise<void> {
+  await writeFile(PANEL_CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+}
+
+// GET /api/server/patchline - Get current patchline setting
+router.get('/patchline', authMiddleware, async (_req: Request, res: Response) => {
+  try {
+    const panelConfig = await readPanelConfig();
+    res.json({
+      patchline: panelConfig.patchline,
+      options: ['release', 'pre-release']
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to get patchline setting',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// PUT /api/server/patchline - Set patchline setting
+router.put('/patchline', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { patchline } = req.body;
+
+    if (!patchline || !['release', 'pre-release'].includes(patchline)) {
+      res.status(400).json({ error: 'Invalid patchline. Must be "release" or "pre-release"' });
+      return;
+    }
+
+    const panelConfig = await readPanelConfig();
+    const oldPatchline = panelConfig.patchline;
+    const patchlineChanged = oldPatchline !== patchline;
+
+    // Update config
+    panelConfig.patchline = patchline;
+    await writePanelConfig(panelConfig);
+
+    // If patchline changed, delete server files to force redownload on restart
+    if (patchlineChanged) {
+      const serverJar = path.join(config.serverPath, 'HytaleServer.jar');
+      const assetsZip = path.join(config.serverPath, 'Assets.zip');
+      const versionFile = path.join(config.serverPath, '.hytale-version');
+
+      // Delete via container exec to ensure proper permissions
+      await dockerService.execInContainer(
+        `rm -f "${serverJar}" "${assetsZip}" "${versionFile}" 2>/dev/null || true`
+      );
+
+      res.json({
+        success: true,
+        patchline,
+        changed: true,
+        message: `Patchline changed from ${oldPatchline} to ${patchline}. Server files deleted. Restart to download the new version.`
+      });
+    } else {
+      res.json({
+        success: true,
+        patchline,
+        changed: false,
+        message: 'Patchline unchanged.'
+      });
+    }
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to set patchline',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Helper to get latest version for a patchline
+async function getLatestVersion(patchline: string): Promise<string> {
+  const checkResult = await dockerService.execInContainer(
+    `cd /opt/hytale/downloader && ./hytale-downloader-linux-amd64 -patchline ${patchline} -print-version 2>/dev/null | grep -oE "[0-9]+\\.[0-9]+\\.[0-9]+" | head -1`
+  );
+
+  if (checkResult.success && checkResult.output) {
+    return checkResult.output.trim();
+  }
+  return 'unknown';
+}
+
 // GET /api/server/check-update - Check if a Hytale server update is available
 router.get('/check-update', authMiddleware, async (_req: Request, res: Response) => {
   try {
@@ -192,17 +290,18 @@ router.get('/check-update', authMiddleware, async (_req: Request, res: Response)
       // Version file doesn't exist yet
     }
 
-    // Get latest version by running the downloader with -print-version inside container
-    // We need to exec into the container to run this
-    const checkResult = await dockerService.execInContainer(
-      'cd /opt/hytale/downloader && ./hytale-downloader-linux-amd64 -patchline release -print-version 2>/dev/null | grep -oE "[0-9]+\\.[0-9]+\\.[0-9]+" | head -1'
-    );
+    // Get current patchline setting from panel config
+    const panelConfig = await readPanelConfig();
+    const currentPatchline = panelConfig.patchline;
 
-    let latestVersion = 'unknown';
-    if (checkResult.success && checkResult.output) {
-      latestVersion = checkResult.output.trim();
-    }
+    // Check both patchlines in parallel
+    const [releaseVersion, preReleaseVersion] = await Promise.all([
+      getLatestVersion('release'),
+      getLatestVersion('pre-release')
+    ]);
 
+    // Check if update is available for current patchline
+    const latestVersion = currentPatchline === 'release' ? releaseVersion : preReleaseVersion;
     const updateAvailable = installedVersion !== 'unknown' &&
                            latestVersion !== 'unknown' &&
                            installedVersion !== latestVersion;
@@ -211,6 +310,12 @@ router.get('/check-update', authMiddleware, async (_req: Request, res: Response)
       installedVersion,
       latestVersion,
       updateAvailable,
+      patchline: currentPatchline,
+      // Include both patchline versions
+      versions: {
+        release: releaseVersion,
+        preRelease: preReleaseVersion
+      },
       message: updateAvailable
         ? `Update available: ${installedVersion} → ${latestVersion}`
         : installedVersion === latestVersion
