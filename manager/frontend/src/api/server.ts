@@ -158,6 +158,106 @@ export interface PluginApiResponse<T> {
   error?: string
 }
 
+// Player detail interfaces
+export interface PluginPlayerDetails {
+  uuid: string
+  name: string
+  world?: string
+  position?: { x: number; y: number; z: number }
+  yaw?: number
+  pitch?: number
+  gamemode?: string
+  health?: number
+  maxHealth?: number
+}
+
+export interface PluginInventoryItem {
+  slot: number
+  itemId: string
+  displayName?: string
+  amount: number
+  durability?: number
+  maxDurability?: number
+  enchantments?: string[]
+  nbt?: Record<string, unknown>
+}
+
+export interface PluginPlayerInventory {
+  uuid: string
+  name: string
+  items: PluginInventoryItem[]
+  totalSlots: number
+  usedSlots: number
+}
+
+export interface PluginAppearanceCustomization {
+  hairStyle?: string
+  hairColor?: string
+  eyeColor?: string
+  skinTone?: string
+  bodyType?: string
+  accessories?: string[]
+  colors?: Record<string, string>
+}
+
+export interface PluginPlayerAppearance {
+  uuid: string
+  name: string
+  skinId?: string
+  skinUrl?: string
+  modelType?: string
+  capeId?: string
+  capeUrl?: string
+  customization?: PluginAppearanceCustomization
+}
+
+// File-based player data interfaces (from server/universe/players/)
+export interface FileInventoryItem {
+  slot: number
+  itemId: string
+  displayName: string
+  amount: number
+  durability: number
+  maxDurability: number
+}
+
+export interface FilePlayerInventory {
+  uuid: string
+  name: string
+  storage: FileInventoryItem[]
+  armor: FileInventoryItem[]
+  hotbar: FileInventoryItem[]
+  utility: FileInventoryItem[]
+  backpack: FileInventoryItem[]
+  tools: FileInventoryItem[]
+  activeHotbarSlot: number
+  totalSlots: number
+  usedSlots: number
+}
+
+export interface FilePlayerStats {
+  health: number
+  maxHealth: number
+  stamina: number
+  maxStamina: number
+  oxygen: number
+  mana: number
+  immunity: number
+}
+
+export interface FilePlayerDetails {
+  uuid: string
+  name: string
+  world: string
+  gameMode: string
+  position: { x: number; y: number; z: number } | null
+  rotation: { pitch: number; yaw: number; roll: number } | null
+  stats: FilePlayerStats
+  discoveredZones: string[]
+  memoriesCount: number
+  uniqueItemsUsed: string[]
+}
+
 export const serverApi = {
   async getStatus(): Promise<ServerStatus> {
     const response = await api.get<ServerStatus>('/server/status')
@@ -263,6 +363,33 @@ export const serverApi = {
 
   async getPluginMemory(): Promise<PluginApiResponse<PluginMemoryInfo>> {
     const response = await api.get<PluginApiResponse<PluginMemoryInfo>>('/server/plugin/memory')
+    return response.data
+  },
+
+  // Player detail methods
+  async getPluginPlayerDetails(playerName: string): Promise<PluginApiResponse<PluginPlayerDetails>> {
+    const response = await api.get<PluginApiResponse<PluginPlayerDetails>>(`/server/plugin/players/${encodeURIComponent(playerName)}/details`)
+    return response.data
+  },
+
+  async getPluginPlayerInventory(playerName: string): Promise<PluginApiResponse<PluginPlayerInventory>> {
+    const response = await api.get<PluginApiResponse<PluginPlayerInventory>>(`/server/plugin/players/${encodeURIComponent(playerName)}/inventory`)
+    return response.data
+  },
+
+  async getPluginPlayerAppearance(playerName: string): Promise<PluginApiResponse<PluginPlayerAppearance>> {
+    const response = await api.get<PluginApiResponse<PluginPlayerAppearance>>(`/server/plugin/players/${encodeURIComponent(playerName)}/appearance`)
+    return response.data
+  },
+
+  // File-based player data methods (reads from server/universe/players/)
+  async getFilePlayerDetails(playerName: string): Promise<PluginApiResponse<FilePlayerDetails>> {
+    const response = await api.get<PluginApiResponse<FilePlayerDetails>>(`/server/players/${encodeURIComponent(playerName)}/file/details`)
+    return response.data
+  },
+
+  async getFilePlayerInventory(playerName: string): Promise<PluginApiResponse<FilePlayerInventory>> {
+    const response = await api.get<PluginApiResponse<FilePlayerInventory>>(`/server/players/${encodeURIComponent(playerName)}/file/inventory`)
     return response.data
   },
 }

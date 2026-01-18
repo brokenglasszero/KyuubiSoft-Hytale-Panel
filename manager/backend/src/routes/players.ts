@@ -4,6 +4,8 @@ import path from 'path';
 import { authMiddleware } from '../middleware/auth.js';
 import * as playersService from '../services/players.js';
 import * as dockerService from '../services/docker.js';
+import * as kyuubiApi from '../services/kyuubiApi.js';
+import * as chatLog from '../services/chatLog.js';
 import { config } from '../config.js';
 import { logActivity } from '../services/activityLog.js';
 import type { AuthenticatedRequest } from '../types/index.js';
@@ -113,6 +115,19 @@ router.get('/history', authMiddleware, async (_req: Request, res: Response) => {
 router.get('/offline', authMiddleware, async (_req: Request, res: Response) => {
   const offline = await playersService.getOfflinePlayers();
   res.json({ players: offline, count: offline.length });
+});
+
+// GET /api/players/all - All players from JSON files with online status
+router.get('/all', authMiddleware, async (_req: Request, res: Response) => {
+  // Update online status based on server status
+  const status = await dockerService.getStatus();
+  if (!status.running) {
+    playersService.clearOnlinePlayers();
+  }
+
+  const players = await playersService.getAllPlayersUnified();
+  const onlineCount = players.filter(p => p.online).length;
+  res.json({ players, count: players.length, onlineCount });
 });
 
 // POST /api/players/:name/kick
@@ -469,7 +484,8 @@ router.post('/:name/respawn', authMiddleware, async (req: Request, res: Response
   // SECURITY: Validate player name
   if (!validatePlayerName(res, playerName)) return;
 
-  const result = await dockerService.execCommand(`/player respawn ${playerName}`);
+  // Use --player flag for console commands
+  const result = await dockerService.execCommand(`/player respawn --player ${playerName}`);
 
   if (result.success) {
     res.json({
@@ -581,7 +597,22 @@ router.post('/:name/heal', authMiddleware, async (req: Request, res: Response) =
   // SECURITY: Validate player name
   if (!validatePlayerName(res, playerName)) return;
 
-  const result = await dockerService.execCommand(`/player stats settomax ${playerName} health`);
+  // Try plugin API first
+  try {
+    const pluginResult = await kyuubiApi.healPlayerViaPlugin(playerName);
+    if (pluginResult.success) {
+      res.json({
+        success: true,
+        message: `Player ${playerName} healed`,
+      });
+      return;
+    }
+  } catch {
+    // Plugin not available, fall back to console command
+  }
+
+  // Fallback: Use console command
+  const result = await dockerService.execCommand(`/player stats settomax --player ${playerName}`);
 
   if (result.success) {
     res.json({
@@ -621,9 +652,10 @@ router.post('/:name/effect', authMiddleware, async (req: Request, res: Response)
     return;
   }
 
+  // Use --player flag for console commands
   const command = action === 'clear'
-    ? `/player effect clear ${playerName}`
-    : `/player effect apply ${playerName} ${effect}`;
+    ? `/player effect clear --player ${playerName}`
+    : `/player effect apply --player ${playerName} ${effect}`;
   const result = await dockerService.execCommand(command);
 
   if (result.success) {
@@ -643,6 +675,24 @@ router.post('/:name/effect', authMiddleware, async (req: Request, res: Response)
 router.post('/:name/inventory/clear', authMiddleware, async (req: Request, res: Response) => {
   const playerName = req.params.name;
 
+  // SECURITY: Validate player name
+  if (!validatePlayerName(res, playerName)) return;
+
+  // Try plugin API first
+  try {
+    const pluginResult = await kyuubiApi.clearInventoryViaPlugin(playerName);
+    if (pluginResult.success) {
+      res.json({
+        success: true,
+        message: `Cleared ${playerName}'s inventory`,
+      });
+      return;
+    }
+  } catch {
+    // Plugin not available, fall back to console command
+  }
+
+  // Fallback: Use console command
   const result = await dockerService.execCommand(`/inventory clear ${playerName}`);
 
   if (result.success) {
@@ -669,6 +719,160 @@ router.get('/activity', authMiddleware, async (req: Request, res: Response) => {
   const days = parseInt(req.query.days as string) || 7;
   const activity = await playersService.getDailyActivity(days);
   res.json(activity);
+});
+
+// ============== CHAT LOG ENDPOINTS ==============
+
+// GET /api/players/chat - Get global chat log
+router.get('/chat', authMiddleware, async (req: Request, res: Response) => {
+  const limit = parseInt(req.query.limit as string) || 100;
+  const offset = parseInt(req.query.offset as string) || 0;
+  const days = parseInt(req.query.days as string) || 7; // Default 7 days, 0 = all
+
+  const result = await chatLog.getGlobalChatLog({ limit, offset, days });
+  res.json(result);
+});
+
+// GET /api/players/:name/chat - Get chat log for specific player
+router.get('/:name/chat', authMiddleware, async (req: Request, res: Response) => {
+  const playerName = req.params.name;
+
+  // SECURITY: Validate player name
+  if (!validatePlayerName(res, playerName)) return;
+
+  const limit = parseInt(req.query.limit as string) || 100;
+  const offset = parseInt(req.query.offset as string) || 0;
+  const days = parseInt(req.query.days as string) || 7; // Default 7 days, 0 = all
+
+  const result = await chatLog.getPlayerChatLog(playerName, { limit, offset, days });
+  res.json(result);
+});
+
+// ============== DEATH POSITION ENDPOINTS ==============
+
+// GET /api/players/:name/deaths - Get death positions from player file
+router.get('/:name/deaths', authMiddleware, async (req: Request, res: Response) => {
+  const playerName = req.params.name;
+
+  // SECURITY: Validate player name
+  if (!validatePlayerName(res, playerName)) return;
+
+  // Get death positions directly from player JSON file
+  const positions = await playersService.getPlayerDeathPositionsFromFile(playerName);
+
+  res.json({
+    success: positions.length > 0,
+    player: playerName,
+    positions,
+    count: positions.length,
+  });
+});
+
+// GET /api/players/:name/deaths/last - Get last death position for a player
+router.get('/:name/deaths/last', authMiddleware, async (req: Request, res: Response) => {
+  const playerName = req.params.name;
+
+  // SECURITY: Validate player name
+  if (!validatePlayerName(res, playerName)) return;
+
+  // Get death positions from file and return the last one (most recent)
+  const positions = await playersService.getPlayerDeathPositionsFromFile(playerName);
+
+  if (positions.length > 0) {
+    const lastPosition = positions[positions.length - 1];
+    res.json({
+      success: true,
+      player: playerName,
+      position: lastPosition,
+    });
+  } else {
+    res.json({
+      success: false,
+      player: playerName,
+      error: 'No death position recorded for this player',
+    });
+  }
+});
+
+// POST /api/players/:name/teleport/death - Teleport player to a death position
+// Body: { index?: number } - index of death position (default: last/most recent)
+router.post('/:name/teleport/death', authMiddleware, async (req: Request, res: Response) => {
+  const playerName = req.params.name;
+  const { index } = req.body;
+
+  // SECURITY: Validate player name
+  if (!validatePlayerName(res, playerName)) return;
+
+  // Get death positions from player file
+  const positions = await playersService.getPlayerDeathPositionsFromFile(playerName);
+
+  if (positions.length === 0) {
+    res.status(404).json({
+      success: false,
+      error: 'No death position recorded for this player',
+    });
+    return;
+  }
+
+  // Get the requested position (default: last/most recent)
+  const posIndex = index !== undefined ? Math.min(Math.max(0, index), positions.length - 1) : positions.length - 1;
+  const position = positions[posIndex];
+
+  // Teleport to death position
+  const command = `/tp ${playerName} ${position.position.x} ${position.position.y} ${position.position.z}`;
+  const result = await dockerService.execCommand(command);
+
+  if (result.success) {
+    res.json({
+      success: true,
+      message: `Teleported ${playerName} to death location (Day ${position.day}: ${position.position.x}, ${position.position.y}, ${position.position.z})`,
+      position,
+    });
+  } else {
+    res.status(500).json({
+      success: false,
+      error: result.error || 'Failed to teleport player',
+    });
+  }
+});
+
+// POST /api/players/:name/deaths - Manually record a death position (for testing/admin)
+router.post('/:name/deaths', authMiddleware, async (req: Request, res: Response) => {
+  const playerName = req.params.name;
+
+  // SECURITY: Validate player name
+  if (!validatePlayerName(res, playerName)) return;
+
+  const { world, x, y, z } = req.body;
+
+  if (!world || x === undefined || y === undefined || z === undefined) {
+    res.status(400).json({
+      success: false,
+      error: 'Missing required fields: world, x, y, z',
+    });
+    return;
+  }
+
+  try {
+    const position = await chatLog.recordDeathPosition(
+      playerName,
+      world,
+      parseFloat(x),
+      parseFloat(y),
+      parseFloat(z)
+    );
+
+    res.json({
+      success: true,
+      message: `Death position recorded for ${playerName}`,
+      position,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to record death position',
+    });
+  }
 });
 
 export default router;

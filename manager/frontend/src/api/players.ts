@@ -16,9 +16,30 @@ export interface PlayerHistoryEntry {
   sessionCount: number
 }
 
+// Unified player entry from JSON files with online status
+export interface UnifiedPlayerEntry {
+  name: string
+  uuid: string
+  online: boolean
+  world?: string
+  gameMode?: string
+  position?: { x: number; y: number; z: number }
+  health?: number
+  maxHealth?: number
+  lastSeen?: string
+  playTime?: number
+  sessionCount?: number
+}
+
 export interface PlayersResponse {
   players: PlayerInfo[]
   count: number
+}
+
+export interface UnifiedPlayersResponse {
+  players: UnifiedPlayerEntry[]
+  count: number
+  onlineCount: number
 }
 
 export interface PlayerHistoryResponse {
@@ -30,6 +51,51 @@ export interface ActionResponse {
   success: boolean
   message?: string
   error?: string
+}
+
+// Death position from player file (with day info)
+export interface DeathPosition {
+  id: string
+  world: string
+  day: number
+  position: {
+    x: number
+    y: number
+    z: number
+  }
+  rotation: {
+    pitch: number
+    yaw: number
+    roll: number
+  }
+}
+
+export interface DeathPositionsResponse {
+  success: boolean
+  player: string
+  positions: DeathPosition[]
+  count: number
+}
+
+export interface DeathPositionResponse {
+  success: boolean
+  player: string
+  position?: DeathPosition
+  error?: string
+}
+
+export interface ChatMessage {
+  id: string
+  timestamp: string
+  player: string
+  uuid?: string
+  message: string
+}
+
+export interface ChatLogResponse {
+  messages: ChatMessage[]
+  total: number
+  availableDays?: number
 }
 
 export const playersApi = {
@@ -50,6 +116,11 @@ export const playersApi = {
 
   async getOffline(): Promise<PlayerHistoryResponse> {
     const response = await api.get<PlayerHistoryResponse>('/players/offline')
+    return response.data
+  },
+
+  async getAll(): Promise<UnifiedPlayersResponse> {
+    const response = await api.get<UnifiedPlayersResponse>('/players/all')
     return response.data
   },
 
@@ -130,6 +201,39 @@ export const playersApi = {
 
   async clearInventory(playerName: string): Promise<ActionResponse> {
     const response = await api.post<ActionResponse>(`/players/${playerName}/inventory/clear`)
+    return response.data
+  },
+
+  async getDeathPositions(playerName: string): Promise<DeathPositionsResponse> {
+    const response = await api.get<DeathPositionsResponse>(`/players/${playerName}/deaths`)
+    return response.data
+  },
+
+  async getLastDeathPosition(playerName: string): Promise<DeathPositionResponse> {
+    const response = await api.get<DeathPositionResponse>(`/players/${playerName}/deaths/last`)
+    return response.data
+  },
+
+  async teleportToDeath(playerName: string, index?: number): Promise<ActionResponse> {
+    const response = await api.post<ActionResponse>(`/players/${playerName}/teleport/death`, { index })
+    return response.data
+  },
+
+  async getGlobalChatLog(options?: { limit?: number; offset?: number; days?: number }): Promise<ChatLogResponse> {
+    const params = new URLSearchParams()
+    if (options?.limit) params.set('limit', options.limit.toString())
+    if (options?.offset) params.set('offset', options.offset.toString())
+    if (options?.days !== undefined) params.set('days', options.days.toString())
+    const response = await api.get<ChatLogResponse>(`/players/chat?${params.toString()}`)
+    return response.data
+  },
+
+  async getPlayerChatLog(playerName: string, options?: { limit?: number; offset?: number; days?: number }): Promise<ChatLogResponse> {
+    const params = new URLSearchParams()
+    if (options?.limit) params.set('limit', options.limit.toString())
+    if (options?.offset) params.set('offset', options.offset.toString())
+    if (options?.days !== undefined) params.set('days', options.days.toString())
+    const response = await api.get<ChatLogResponse>(`/players/${playerName}/chat?${params.toString()}`)
     return response.data
   },
 }
