@@ -1,5 +1,19 @@
 import api from './client'
 
+export interface ItemInfo {
+  id: string
+  name: string
+  path: string
+  category?: string
+}
+
+export interface ItemsResponse {
+  items: ItemInfo[]
+  count: number
+  total?: number
+  query?: string
+}
+
 export interface ExtractionProgress {
   started: string
   filesExtracted: number
@@ -117,5 +131,36 @@ export const assetsApi = {
 
   getDownloadUrl(path: string): string {
     return `/api/assets/download/${path}`
+  },
+
+  getItemIconUrl(itemId: string): string {
+    return `/api/assets/item-icon/${encodeURIComponent(itemId)}`
+  },
+
+  getPlayerAvatarUrl(): string {
+    return '/api/assets/player-avatar'
+  },
+
+  async searchItemIcon(itemId: string): Promise<{ itemId: string; found: boolean; paths: string[] }> {
+    const response = await api.get(`/assets/item-icon-search/${encodeURIComponent(itemId)}`)
+    return response.data
+  },
+
+  async searchPlayerAvatar(): Promise<{ results: { term: string; paths: string[] }[] }> {
+    const response = await api.get('/assets/player-avatar-search')
+    return response.data
+  },
+
+  async getItems(query?: string, limit?: number): Promise<ItemsResponse> {
+    const params: Record<string, string> = {}
+    if (query) params.q = query
+    if (limit) params.limit = String(limit)
+    const response = await api.get<ItemsResponse>('/assets/items', { params })
+    return response.data
+  },
+
+  async searchItems(query: string, limit: number = 20): Promise<ItemInfo[]> {
+    const response = await this.getItems(query, limit)
+    return response.items
   },
 }

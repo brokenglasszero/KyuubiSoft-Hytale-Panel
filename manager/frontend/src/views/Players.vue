@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { playersApi, type PlayerInfo, type PlayerHistoryEntry } from '@/api/players'
+import { playersApi, type UnifiedPlayerEntry, type DeathPosition } from '@/api/players'
 import { serverApi, type PluginPlayer } from '@/api/server'
 import Card from '@/components/ui/Card.vue'
 import Button from '@/components/ui/Button.vue'
 import Modal from '@/components/ui/Modal.vue'
+import ItemAutocomplete from '@/components/ui/ItemAutocomplete.vue'
+import PlayerDetailModal from '@/components/players/PlayerDetailModal.vue'
 import { formatItemPath } from '@/utils/formatItemPath'
 
 const { t } = useI18n()
@@ -13,23 +15,18 @@ const { t } = useI18n()
 // Tab state
 const activeTab = ref<'online' | 'offline'>('online')
 
-// Extended player info when plugin is available
-interface ExtendedPlayerInfo extends PlayerInfo {
-  uuid?: string
-  position?: { x: number; y: number; z: number }
-  world?: string
-  health?: number
-  gameMode?: string
-  ping?: number
-}
-
-const players = ref<ExtendedPlayerInfo[]>([])
-const offlinePlayers = ref<PlayerHistoryEntry[]>([])
+// All players from JSON files with online status
+const allPlayers = ref<UnifiedPlayerEntry[]>([])
 const loading = ref(true)
-const offlineLoading = ref(false)
 const error = ref('')
 const successMessage = ref('')
 const pluginAvailable = ref(false)
+
+// Computed: online players
+const onlinePlayers = computed(() => allPlayers.value.filter(p => p.online))
+
+// Computed: offline players
+const offlinePlayers = computed(() => allPlayers.value.filter(p => !p.online))
 
 // Selected player for actions
 const selectedPlayer = ref<string | null>(null)
@@ -47,13 +44,17 @@ const showClearInventoryModal = ref(false)
 const showTeleportModal = ref(false)
 const showGamemodeModal = ref(false)
 const showGiveModal = ref(false)
+const showPlayerDetailModal = ref(false)
 
 // Teleport form
-const teleportMode = ref<'player' | 'coords'>('player')
+const teleportMode = ref<'player' | 'coords' | 'death'>('player')
 const teleportTarget = ref('')
 const teleportX = ref(0)
 const teleportY = ref(64)
 const teleportZ = ref(0)
+const lastDeathPosition = ref<DeathPosition | null>(null)
+const deathPositionLoading = ref(false)
+const deathPositionError = ref('')
 
 // Give item form
 const giveItem = ref('')
@@ -66,62 +67,59 @@ let pollInterval: ReturnType<typeof setInterval> | null = null
 
 async function fetchPlayers() {
   try {
-    // Try plugin API first (more accurate and detailed)
+    // Get all players from JSON files (for offline list)
+    const allResponse = await playersApi.getAll()
+    const allPlayersList = allResponse.players
+
+    // Get online players (source of truth for who is online)
+    let onlinePlayerNames: string[] = []
+
+    // Try plugin API first (most accurate)
     try {
       const pluginResponse = await serverApi.getPluginPlayers()
       if (pluginResponse.success && pluginResponse.data) {
         pluginAvailable.value = true
-        players.value = pluginResponse.data.players.map((p: PluginPlayer) => ({
-          name: p.name,
-          session_duration: p.joinedAt ? formatJoinedAt(p.joinedAt) : '-',
-          uuid: p.uuid,
-          position: p.position,
-          world: p.world,
-          health: p.health,
-          gameMode: p.gameMode,
-          ping: p.ping,
-        }))
-        error.value = ''
-        return
+        onlinePlayerNames = pluginResponse.data.players.map((p: PluginPlayer) => p.name.toLowerCase())
+
+        // Update all players with plugin data for online ones
+        for (const pluginPlayer of pluginResponse.data.players) {
+          const player = allPlayersList.find(
+            p => p.name.toLowerCase() === pluginPlayer.name.toLowerCase()
+          )
+          if (player) {
+            player.online = true
+            player.health = pluginPlayer.health
+            player.position = pluginPlayer.position
+            player.world = pluginPlayer.world
+            player.gameMode = pluginPlayer.gameMode
+          }
+        }
       }
     } catch {
-      // Plugin not available, fall back to standard API
+      pluginAvailable.value = false
     }
 
-    // Fall back to standard API
-    pluginAvailable.value = false
-    const response = await playersApi.getOnline()
-    players.value = response.players
+    // Fallback to standard API if plugin didn't return players
+    if (onlinePlayerNames.length === 0) {
+      try {
+        const onlineResponse = await playersApi.getOnline()
+        onlinePlayerNames = onlineResponse.players.map(p => p.name.toLowerCase())
+      } catch {
+        // Ignore
+      }
+    }
+
+    // Mark online status for all players
+    for (const player of allPlayersList) {
+      player.online = onlinePlayerNames.includes(player.name.toLowerCase())
+    }
+
+    allPlayers.value = allPlayersList
     error.value = ''
   } catch (err) {
     error.value = t('errors.connectionFailed')
   } finally {
     loading.value = false
-  }
-}
-
-function formatJoinedAt(joinedAt: string): string {
-  const joined = new Date(joinedAt)
-  const now = new Date()
-  const diff = now.getTime() - joined.getTime()
-  const minutes = Math.floor(diff / 60000)
-  const hours = Math.floor(minutes / 60)
-  if (hours > 0) {
-    return `${hours}h ${minutes % 60}m`
-  }
-  return `${minutes}m`
-}
-
-async function fetchOfflinePlayers() {
-  offlineLoading.value = true
-  try {
-    const response = await playersApi.getOffline()
-    offlinePlayers.value = response.players
-    error.value = ''
-  } catch (err) {
-    error.value = t('errors.connectionFailed')
-  } finally {
-    offlineLoading.value = false
   }
 }
 
@@ -185,8 +183,32 @@ function openTeleportModal(name: string) {
   teleportX.value = 0
   teleportY.value = 64
   teleportZ.value = 0
+  lastDeathPosition.value = null
+  deathPositionError.value = ''
   showTeleportModal.value = true
   closeDropdown()
+}
+
+async function selectDeathTeleportMode() {
+  teleportMode.value = 'death'
+  if (!selectedPlayer.value) return
+
+  deathPositionLoading.value = true
+  deathPositionError.value = ''
+  lastDeathPosition.value = null
+
+  try {
+    const response = await playersApi.getLastDeathPosition(selectedPlayer.value)
+    if (response.success && response.position) {
+      lastDeathPosition.value = response.position
+    } else {
+      deathPositionError.value = response.error || t('players.noDeathPosition')
+    }
+  } catch {
+    deathPositionError.value = t('players.noDeathPosition')
+  } finally {
+    deathPositionLoading.value = false
+  }
 }
 
 function openGamemodeModal(name: string) {
@@ -201,6 +223,12 @@ function openGiveModal(name: string) {
   giveAmount.value = 1
   showGiveModal.value = true
   closeDropdown()
+}
+
+function openPlayerDetailModal(name: string, uuid?: string) {
+  selectedPlayer.value = name
+  selectedPlayerUuid.value = uuid || null
+  showPlayerDetailModal.value = true
 }
 
 async function handleWhitelist(name: string) {
@@ -288,10 +316,6 @@ async function confirmBan() {
     showSuccess(t('players.ban') + ': ' + selectedPlayer.value)
     banReason.value = ''
     await fetchPlayers()
-    // Also refresh offline players if that tab is active
-    if (activeTab.value === 'offline') {
-      await fetchOfflinePlayers()
-    }
   } catch (err) {
     error.value = t('errors.serverError')
   } finally {
@@ -331,13 +355,20 @@ async function confirmTeleport() {
   if (!selectedPlayer.value) return
   actionLoading.value = true
   try {
-    if (teleportMode.value === 'player' && teleportTarget.value) {
+    if (teleportMode.value === 'death') {
+      // Teleport to death location
+      await playersApi.teleportToDeath(selectedPlayer.value)
+      showTeleportModal.value = false
+      showSuccess(t('players.teleportToDeath') + ': ' + selectedPlayer.value)
+    } else if (teleportMode.value === 'player' && teleportTarget.value) {
       await playersApi.teleport(selectedPlayer.value, { target: teleportTarget.value })
+      showTeleportModal.value = false
+      showSuccess(t('players.teleport') + ': ' + selectedPlayer.value)
     } else {
       await playersApi.teleport(selectedPlayer.value, { x: teleportX.value, y: teleportY.value, z: teleportZ.value })
+      showTeleportModal.value = false
+      showSuccess(t('players.teleport') + ': ' + selectedPlayer.value)
     }
-    showTeleportModal.value = false
-    showSuccess(t('players.teleport') + ': ' + selectedPlayer.value)
   } catch (err) {
     error.value = t('errors.serverError')
   } finally {
@@ -375,7 +406,6 @@ async function confirmGive() {
 
 onMounted(() => {
   fetchPlayers()
-  fetchOfflinePlayers()
   pollInterval = setInterval(fetchPlayers, 10000)
 })
 
@@ -394,7 +424,8 @@ onUnmounted(() => {
         <h1 class="text-2xl font-bold text-white">{{ t('players.title') }}</h1>
         <div class="flex items-center gap-2 mt-1">
           <p class="text-gray-400">
-            {{ t('players.playerCount', { count: players.length }) }}
+            {{ t('players.playerCount', { count: onlinePlayers.length }) }}
+            <span class="text-gray-500 ml-2">({{ allPlayers.length }} {{ t('players.total') }})</span>
           </p>
           <span
             v-if="pluginAvailable"
@@ -432,10 +463,10 @@ onUnmounted(() => {
             : 'bg-dark-100 text-gray-400 hover:text-white'
         ]"
       >
-        {{ t('players.online') }} ({{ players.length }})
+        {{ t('players.online') }} ({{ onlinePlayers.length }})
       </button>
       <button
-        @click="activeTab = 'offline'; fetchOfflinePlayers()"
+        @click="activeTab = 'offline'"
         :class="[
           'px-4 py-2 rounded-lg font-medium transition-colors',
           activeTab === 'offline'
@@ -453,7 +484,7 @@ onUnmounted(() => {
         {{ t('common.loading') }}
       </div>
 
-      <div v-else-if="players.length === 0" class="text-center text-gray-500 p-8">
+      <div v-else-if="onlinePlayers.length === 0" class="text-center text-gray-500 p-8">
         <svg class="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
         </svg>
@@ -462,18 +493,21 @@ onUnmounted(() => {
 
       <div v-else class="divide-y divide-dark-50/30">
         <div
-          v-for="player in players"
+          v-for="player in onlinePlayers"
           :key="player.name"
           class="flex items-center justify-between p-4 hover:bg-dark-50/20 transition-colors"
         >
-          <!-- Player Info -->
-          <div class="flex items-center gap-4 flex-1 min-w-0">
-            <div class="w-10 h-10 bg-hytale-orange/20 rounded-lg flex items-center justify-center flex-shrink-0">
+          <!-- Player Info (Clickable for details) -->
+          <div
+            class="flex items-center gap-4 flex-1 min-w-0 cursor-pointer group"
+            @click.stop="openPlayerDetailModal(player.name, player.uuid)"
+          >
+            <div class="w-10 h-10 bg-hytale-orange/20 rounded-lg flex items-center justify-center flex-shrink-0 group-hover:bg-hytale-orange/30 transition-colors">
               <span class="text-hytale-orange font-bold">{{ player.name[0].toUpperCase() }}</span>
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
-                <p class="font-medium text-white">{{ player.name }}</p>
+                <p class="font-medium text-white group-hover:text-hytale-orange transition-colors">{{ player.name }}</p>
                 <!-- Gamemode badge when plugin available -->
                 <span
                   v-if="pluginAvailable && player.gameMode"
@@ -483,24 +517,18 @@ onUnmounted(() => {
                 </span>
               </div>
               <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
-                <span>{{ t('players.sessionTime') }}: {{ player.session_duration }}</span>
-                <!-- Plugin-provided details -->
-                <span v-if="pluginAvailable && player.ping !== undefined">
-                  <span class="text-gray-600">Ping:</span>
-                  <span :class="player.ping < 100 ? 'text-green-400' : player.ping < 200 ? 'text-yellow-400' : 'text-red-400'">
-                    {{ player.ping }}ms
-                  </span>
-                </span>
-                <span v-if="pluginAvailable && player.health !== undefined">
+                <span v-if="player.playTime">{{ t('players.totalPlayTime') }}: {{ formatPlayTime(player.playTime) }}</span>
+                <!-- Plugin/File-provided details -->
+                <span v-if="player.health !== undefined">
                   <span class="text-gray-600">HP:</span>
                   <span :class="player.health > 15 ? 'text-green-400' : player.health > 8 ? 'text-yellow-400' : 'text-red-400'">
-                    {{ player.health.toFixed(0) }}
+                    {{ player.health.toFixed(0) }}<span v-if="player.maxHealth">/{{ player.maxHealth }}</span>
                   </span>
                 </span>
-                <span v-if="pluginAvailable && player.position" class="text-gray-600">
+                <span v-if="player.position" class="text-gray-600">
                   {{ Math.floor(player.position.x) }}, {{ Math.floor(player.position.y) }}, {{ Math.floor(player.position.z) }}
                 </span>
-                <span v-if="pluginAvailable && player.world" class="flex items-center gap-1">
+                <span v-if="player.world" class="flex items-center gap-1">
                   <svg class="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
@@ -643,7 +671,7 @@ onUnmounted(() => {
 
     <!-- Offline Players -->
     <Card v-if="activeTab === 'offline'" :padding="false">
-      <div v-if="offlineLoading" class="text-center text-gray-500 p-8">
+      <div v-if="loading" class="text-center text-gray-500 p-8">
         {{ t('common.loading') }}
       </div>
 
@@ -660,18 +688,34 @@ onUnmounted(() => {
           :key="player.name"
           class="flex items-center justify-between p-4 hover:bg-dark-50/20 transition-colors"
         >
-          <!-- Player Info -->
-          <div class="flex items-center gap-4">
-            <div class="w-10 h-10 bg-gray-500/20 rounded-lg flex items-center justify-center">
+          <!-- Player Info (Clickable for details) -->
+          <div
+            class="flex items-center gap-4 flex-1 min-w-0 cursor-pointer group"
+            @click.stop="openPlayerDetailModal(player.name, player.uuid)"
+          >
+            <div class="w-10 h-10 bg-gray-500/20 rounded-lg flex items-center justify-center group-hover:bg-gray-500/30 transition-colors">
               <span class="text-gray-400 font-bold">{{ player.name[0].toUpperCase() }}</span>
             </div>
-            <div>
-              <p class="font-medium text-white">{{ player.name }}</p>
-              <p v-if="player.uuid" class="text-xs text-gray-500 font-mono">{{ player.uuid }}</p>
-              <div class="flex gap-4 text-sm text-gray-500 mt-1">
-                <span>{{ t('players.lastSeen') }}: {{ formatDate(player.lastSeen) }}</span>
-                <span>{{ t('players.totalPlayTime') }}: {{ formatPlayTime(player.playTime) }}</span>
-                <span>{{ t('players.sessions') }}: {{ player.sessionCount }}</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <p class="font-medium text-white group-hover:text-hytale-orange transition-colors">{{ player.name }}</p>
+                <span
+                  v-if="player.gameMode"
+                  class="px-2 py-0.5 text-xs rounded-full bg-dark-50 text-gray-400"
+                >
+                  {{ player.gameMode }}
+                </span>
+              </div>
+              <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 mt-1">
+                <span v-if="player.lastSeen">{{ t('players.lastSeen') }}: {{ formatDate(player.lastSeen) }}</span>
+                <span v-if="player.playTime">{{ t('players.totalPlayTime') }}: {{ formatPlayTime(player.playTime) }}</span>
+                <span v-if="player.sessionCount">{{ t('players.sessions') }}: {{ player.sessionCount }}</span>
+                <span v-if="player.world" class="flex items-center gap-1">
+                  <svg class="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span class="text-cyan-400">{{ player.world }}</span>
+                </span>
               </div>
             </div>
           </div>
@@ -783,6 +827,12 @@ onUnmounted(() => {
           >
             {{ t('players.teleportCoords') }}
           </button>
+          <button
+            @click="selectDeathTeleportMode"
+            :class="['flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors', teleportMode === 'death' ? 'bg-red-500 text-white' : 'bg-dark-100 text-gray-400']"
+          >
+            {{ t('players.teleportDeath') }}
+          </button>
         </div>
 
         <!-- Player Target -->
@@ -793,14 +843,14 @@ onUnmounted(() => {
             class="w-full px-4 py-2 bg-dark-100 border border-dark-50 rounded-lg text-white focus:outline-none focus:border-hytale-orange"
           >
             <option value="">-- {{ t('players.name') }} --</option>
-            <option v-for="p in players.filter(x => x.name !== selectedPlayer)" :key="p.name" :value="p.name">
+            <option v-for="p in onlinePlayers.filter(x => x.name !== selectedPlayer)" :key="p.name" :value="p.name">
               {{ p.name }}
             </option>
           </select>
         </div>
 
         <!-- Coordinates -->
-        <div v-else class="grid grid-cols-3 gap-3">
+        <div v-else-if="teleportMode === 'coords'" class="grid grid-cols-3 gap-3">
           <div>
             <label class="block text-sm font-medium text-gray-400 mb-2">X</label>
             <input
@@ -826,10 +876,54 @@ onUnmounted(() => {
             />
           </div>
         </div>
+
+        <!-- Death Location -->
+        <div v-else-if="teleportMode === 'death'" class="space-y-3">
+          <div v-if="deathPositionLoading" class="flex items-center justify-center py-4">
+            <svg class="w-5 h-5 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          </div>
+          <div v-else-if="deathPositionError" class="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+            {{ deathPositionError }}
+          </div>
+          <div v-else-if="lastDeathPosition" class="p-4 bg-dark-100 rounded-lg space-y-2">
+            <div class="flex items-center gap-2 text-red-400 text-sm font-medium">
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/>
+              </svg>
+              {{ t('players.lastDeathLocation') }}
+            </div>
+            <div class="grid grid-cols-3 gap-2 text-sm">
+              <div class="text-center">
+                <span class="text-gray-500">X:</span>
+                <span class="text-white font-mono ml-1">{{ lastDeathPosition.position.x }}</span>
+              </div>
+              <div class="text-center">
+                <span class="text-gray-500">Y:</span>
+                <span class="text-white font-mono ml-1">{{ lastDeathPosition.position.y }}</span>
+              </div>
+              <div class="text-center">
+                <span class="text-gray-500">Z:</span>
+                <span class="text-white font-mono ml-1">{{ lastDeathPosition.position.z }}</span>
+              </div>
+            </div>
+            <div class="text-xs text-gray-500 text-center">
+              {{ lastDeathPosition.world }} - {{ t('players.day') }} {{ lastDeathPosition.day }}
+            </div>
+          </div>
+        </div>
       </div>
       <template #footer>
         <Button variant="secondary" @click="showTeleportModal = false">{{ t('common.cancel') }}</Button>
-        <Button :loading="actionLoading" @click="confirmTeleport">{{ t('players.teleport') }}</Button>
+        <Button
+          :loading="actionLoading"
+          :disabled="teleportMode === 'death' && (!lastDeathPosition || deathPositionLoading)"
+          @click="confirmTeleport"
+        >
+          {{ t('players.teleport') }}
+        </Button>
       </template>
     </Modal>
 
@@ -868,12 +962,11 @@ onUnmounted(() => {
       <div class="space-y-4">
         <div>
           <label class="block text-sm font-medium text-gray-400 mb-2">{{ t('players.itemId') }}</label>
-          <input
+          <ItemAutocomplete
             v-model="giveItem"
-            type="text"
-            placeholder="hytale:diamond"
-            class="w-full px-4 py-2 bg-dark-100 border border-dark-50 rounded-lg text-white focus:outline-none focus:border-hytale-orange"
+            :placeholder="t('players.searchItems')"
           />
+          <p class="mt-1 text-xs text-gray-500">{{ t('players.itemIdHint') }}</p>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-400 mb-2">{{ t('players.amount') }}</label>
@@ -891,5 +984,13 @@ onUnmounted(() => {
         <Button :loading="actionLoading" @click="confirmGive" :disabled="!giveItem">{{ t('players.give') }}</Button>
       </template>
     </Modal>
+
+    <!-- Player Detail Modal -->
+    <PlayerDetailModal
+      :open="showPlayerDetailModal"
+      :player-name="selectedPlayer || ''"
+      :player-uuid="selectedPlayerUuid || undefined"
+      @close="showPlayerDetailModal = false"
+    />
   </div>
 </template>

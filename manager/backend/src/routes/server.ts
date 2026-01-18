@@ -4,6 +4,7 @@ import path from 'path';
 import { authMiddleware } from '../middleware/auth.js';
 import * as dockerService from '../services/docker.js';
 import * as kyuubiApiService from '../services/kyuubiApi.js';
+import { getPlayerInventoryFromFile, getPlayerDetailsFromFile } from '../services/players.js';
 import { config } from '../config.js';
 
 const router = Router();
@@ -540,6 +541,114 @@ router.get('/plugin/memory', authMiddleware, async (_req: Request, res: Response
   } catch (error) {
     res.status(500).json({
       error: 'Failed to get memory stats from plugin',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// GET /api/server/plugin/players/:name/details - Get player details from plugin API
+router.get('/plugin/players/:name/details', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { name } = req.params;
+    const result = await kyuubiApiService.getPlayerDetailsFromPlugin(name);
+    if (!result.success) {
+      res.status(503).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to get player details from plugin',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// GET /api/server/plugin/players/:name/inventory - Get player inventory from plugin API
+router.get('/plugin/players/:name/inventory', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { name } = req.params;
+    const result = await kyuubiApiService.getPlayerInventoryFromPlugin(name);
+    if (!result.success) {
+      res.status(503).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to get player inventory from plugin',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// GET /api/server/plugin/players/:name/appearance - Get player appearance from plugin API
+router.get('/plugin/players/:name/appearance', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { name } = req.params;
+    const result = await kyuubiApiService.getPlayerAppearanceFromPlugin(name);
+    if (!result.success) {
+      res.status(503).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to get player appearance from plugin',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// ============================================================
+// Player Data from Files (server/universe/players/)
+// ============================================================
+
+// GET /api/server/players/:name/file/details - Get player details from saved JSON file
+router.get('/players/:name/file/details', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { name } = req.params;
+    const details = await getPlayerDetailsFromFile(name);
+    if (!details) {
+      res.status(404).json({
+        success: false,
+        error: 'Player not found or no saved data available'
+      });
+      return;
+    }
+    res.json({
+      success: true,
+      data: details
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to read player details',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// GET /api/server/players/:name/file/inventory - Get player inventory from saved JSON file
+router.get('/players/:name/file/inventory', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { name } = req.params;
+    const inventory = await getPlayerInventoryFromFile(name);
+    if (!inventory) {
+      res.status(404).json({
+        success: false,
+        error: 'Player not found or no saved inventory data available'
+      });
+      return;
+    }
+    res.json({
+      success: true,
+      data: inventory
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to read player inventory',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
   }

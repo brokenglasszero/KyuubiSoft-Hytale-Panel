@@ -820,6 +820,123 @@ export function searchAssets(query: string, options?: {
   return results;
 }
 
+export interface ItemInfo {
+  id: string;
+  name: string;
+  path: string;
+  category?: string;
+}
+
+// Cache for item list
+let itemListCache: ItemInfo[] | null = null;
+let itemListCacheTime: number = 0;
+const ITEM_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+/**
+ * Get list of all available items from the extracted assets
+ * Items are located in assets/Common/Icons/ItemsGenerated/
+ */
+export function getItemList(forceRefresh: boolean = false): ItemInfo[] {
+  // Return cached list if available and not expired
+  const now = Date.now();
+  if (!forceRefresh && itemListCache && (now - itemListCacheTime) < ITEM_CACHE_TTL) {
+    return itemListCache;
+  }
+
+  const items: ItemInfo[] = [];
+  const seenIds = new Set<string>();
+
+  // Check if assets are extracted
+  if (!fs.existsSync(config.assetsPath)) {
+    console.log('[Items] Assets path does not exist:', config.assetsPath);
+    return items;
+  }
+
+  // Possible paths for item icons
+  const itemIconPaths = [
+    'assets/Common/Icons/ItemsGenerated',
+    'Common/Icons/ItemsGenerated',
+    'Icons/ItemsGenerated',
+    'ItemsGenerated',
+  ];
+
+  let foundPath: string | null = null;
+  let files: AssetFileInfo[] | null = null;
+
+  // Find the correct path
+  for (const iconPath of itemIconPaths) {
+    files = listAssetDirectory(iconPath);
+    if (files && files.length > 0) {
+      foundPath = iconPath;
+      console.log('[Items] Found items in:', iconPath, '- Count:', files.length);
+      break;
+    }
+  }
+
+  if (!files || files.length === 0) {
+    console.log('[Items] No items found in any known path');
+    return items;
+  }
+
+  // Process all PNG files in the directory
+  for (const file of files) {
+    if (file.type !== 'file') continue;
+    if (!file.name.endsWith('.png')) continue;
+
+    // Extract item ID from filename
+    const itemName = file.name.replace('.png', '');
+
+    // Skip very short names
+    if (itemName.length < 2) continue;
+
+    // Use lowercase for the item ID (Hytale expects item names without namespace)
+    const itemId = itemName.toLowerCase();
+
+    // Skip duplicates
+    if (seenIds.has(itemId.toLowerCase())) continue;
+    seenIds.add(itemId.toLowerCase());
+
+    // Create display name from item ID
+    const displayName = itemName
+      .replace(/_/g, ' ')
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+
+    items.push({
+      id: itemId,
+      name: displayName,
+      path: file.path,
+      category: 'items',
+    });
+  }
+
+  console.log('[Items] Total items found:', items.length);
+
+  // Sort by name
+  items.sort((a, b) => a.name.localeCompare(b.name));
+
+  // Cache the result
+  itemListCache = items;
+  itemListCacheTime = now;
+
+  return items;
+}
+
+/**
+ * Search items by name or ID
+ */
+export function searchItems(query: string, limit: number = 20): ItemInfo[] {
+  const items = getItemList();
+  const queryLower = query.toLowerCase();
+
+  return items
+    .filter(item =>
+      item.id.toLowerCase().includes(queryLower) ||
+      item.name.toLowerCase().includes(queryLower)
+    )
+    .slice(0, limit);
+}
+
 export default {
   findAssetsArchive,
   getAssetStatus,
@@ -829,4 +946,6 @@ export default {
   getAssetTree,
   readAssetFile,
   searchAssets,
+  getItemList,
+  searchItems,
 };

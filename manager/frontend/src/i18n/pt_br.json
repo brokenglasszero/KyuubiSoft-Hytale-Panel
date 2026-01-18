@@ -19,7 +19,9 @@
     "add": "Adicionar",
     "edit": "Editar",
     "remove": "Remover",
-    "clear": "Limpar"
+    "clear": "Limpar",
+    "previous": "Anterior",
+    "next": "Próximo"
   },
   "auth": {
     "login": "Entrar",
@@ -50,7 +52,8 @@
     "data": "Dados",
     "scheduler": "Agendador",
     "statistics": "Estatísticas",
-    "assets": "Explorador de Assets"
+    "assets": "Explorador de Assets",
+    "chat": "Log de Chat"
   },
   "dashboard": {
     "title": "Painel",
@@ -172,13 +175,32 @@
     "noPlayers": "Nenhum jogador online",
     "noOfflinePlayers": "Nenhum jogador offline no histórico",
     "playerCount": "{count} jogadores online",
+    "total": "total",
     "offlineCount": "{count} jogadores offline",
     "messagePlaceholder": "Enviar mensagem...",
     "op": "OP",
     "deop": "Remover OP",
     "teleport": "Teleportar",
-    "teleportTo": "Teleportar para Jogador",
-    "teleportCoords": "Teleportar para Coordenadas",
+    "teleportTo": "Para Jogador",
+    "teleportCoords": "Para Coords",
+    "teleportDeath": "Para Morte",
+    "teleportToDeath": "Teleportar para local de morte",
+    "lastDeathLocation": "Último Local de Morte",
+    "noDeathPosition": "Nenhuma posição de morte registrada",
+    "day": "Dia",
+    "details": {
+      "info": "Info",
+      "inventory": "Inventário",
+      "stats": "Status",
+      "chat": "Chat",
+      "noChat": "Sem mensagens de chat",
+      "chatCount": "{count} mensagens",
+      "deaths": "Mortes",
+      "noDeaths": "Nenhuma posição de morte registrada",
+      "deathCount": "{count} posições de morte",
+      "deathDay": "Dia {day}",
+      "latestDeath": "Mais recente"
+    },
     "kill": "Matar",
     "respawn": "Renascer",
     "heal": "Curar",
@@ -191,6 +213,8 @@
     },
     "give": "Dar Item",
     "itemId": "ID do Item",
+    "searchItems": "Buscar itens...",
+    "itemIdHint": "Digite para buscar ou insira um ID de item personalizado",
     "amount": "Quantidade",
     "effect": "Efeito",
     "clearEffects": "Limpar Efeitos",
@@ -477,6 +501,13 @@
     "clearLog": "Limpar Registro",
     "confirmClear": "Realmente deseja limpar todo o registro de atividades?",
     "entries": "{count} entradas"
+  },
+  "chat": {
+    "title": "Log de Chat",
+    "description": "Ver todas as mensagens de chat dos jogadores",
+    "noMessages": "Nenhuma mensagem de chat ainda",
+    "searchPlaceholder": "Buscar mensagens ou nomes de jogadores...",
+    "messageCount": "{count} mensagens no total"
   },
   "commands": {
     "title": "Referência de Comandos",

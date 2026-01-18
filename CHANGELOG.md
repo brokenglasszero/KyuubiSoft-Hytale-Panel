@@ -2,6 +2,82 @@
 
 All notable changes to the Hytale Server Manager will be documented in this file.
 
+## [1.6.0] - 2026-01-18
+
+### Added
+
+- **Enhanced Player Menu**: Complete redesign of the player management interface
+  - Click on any player (online or offline) to open detailed player modal
+  - Tabbed interface: Overview, Inventory, Appearance, Chat, Deaths
+  - Player avatar display in modal header (searched from game assets)
+  - Unified player list showing both online and offline players with status indicators
+
+- **Player Inventory Display**: View player inventory from saved JSON files
+  - Shows all inventory slots with item icons from extracted game assets
+  - Hotbar, main inventory, and tools sections
+  - Item tooltips with item names and quantities
+  - Item icon caching for fast loading
+
+- **Player Appearance Tab**: View equipped items
+  - Head, chest, legs, feet equipment slots
+  - Visual display with item icons
+
+- **Death Positions Tab**: Track player death locations
+  - List of recent death positions with coordinates
+  - World/dimension information
+  - Teleport button to send player back to death location
+  - Day information showing when death occurred
+
+- **Player Actions**: New actions available via plugin API
+  - Heal player to full health
+  - Clear player inventory
+  - Give items with autocomplete (item names with icons)
+  - Teleport to coordinates or death position
+  - Kick, ban, whitelist management
+
+- **Item Autocomplete**: Smart item selection for give command
+  - Search items by name with live filtering
+  - Item icons displayed in dropdown
+  - Quantity input field
+
+- **Chat Log System**: Complete overhaul of chat message storage
+  - Daily file rotation: Messages stored in `data/chat/global/YYYY-MM-DD.json`
+  - Per-player chat logs: `data/chat/players/{name}/YYYY-MM-DD.json`
+  - Unlimited message history (no more 1000 message limit)
+  - UUID tracking for each chat message (tracks players across name changes)
+  - Time range filter in Chat view: 7 days, 14 days, 30 days, or all
+  - Shows available days count in the UI
+
+- **Chat Page**: Dedicated page for global chat history
+  - Real-time updates via WebSocket
+  - Search and filter functionality
+  - Player name coloring
+  - Pagination for large chat logs
+
+### Fixed
+
+- **Chat Event Detection**: Fixed PlayerChatEvent not being captured
+  - Changed from `eventRegistry.register()` to `eventRegistry.registerGlobal()` based on Serilum's Chat-History plugin
+  - Chat messages now properly captured and broadcasted via WebSocket
+
+- **Online Player Detection**: Improved accuracy of online status
+  - Plugin API used as source of truth for online players
+  - Fallback to console commands when plugin unavailable
+
+- **Item Icon Loading**: Fixed various issues with item icon display
+  - Better path searching with namespace stripping
+  - Fallback search when exact match not found
+  - In-memory caching for performance
+
+### Changed
+
+- **KyuubiSoft API Plugin v1.1.6**:
+  - Fixed chat event registration using `registerGlobal()` for global chat listener
+  - Added UUID to chat message broadcasts
+  - Added player action endpoints (heal, clearInventory, giveItem, teleport)
+  - Added death position tracking with world coordinates
+  - Removed debug logging for cleaner server logs
+
 ## [1.5.0] - 2025-01-17
 
 ### Added
